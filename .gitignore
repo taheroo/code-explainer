@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+qdrant_storage/
+cloned_repos/
+rag_backend/.env
