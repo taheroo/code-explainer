@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+qdrant_storage/
+.env
+cloned_repos/
