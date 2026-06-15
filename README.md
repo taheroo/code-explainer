@@ -30,6 +30,19 @@ uvicorn rag_backend.main:app --reload
 
 Auto-clones your repo, indexes all service folders, serves on `http://localhost:8000`.
 
+## If you want to clone manually
+
+Clone your repo so its root lands directly in `cloned_repos/` at the project root:
+
+```bash
+cd code-explainer
+git clone https://github.com/your-org/your-repo cloned_repos
+```
+
+If `cloned_repos/` already exists, the auto-cloner skips cloning, so a manual clone works fine.
+
+Do not clone into a nested folder like `cloned_repos/my-repo/` — the engine expects service folders as direct children of `cloned_repos/`, not one level deeper.
+
 ## Ask a question
 
 ```bash
