@@ -7,9 +7,22 @@ Ask plain-English questions about any GitHub monorepo. Get business-friendly ans
 ```bash
 git clone https://github.com/taheroo/code-explainer
 cd code-explainer
+```
+
+### Windows
+
+```bash
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r rag_backend/requirements.txt
+```
+
+### macOS / Linux (Python 3)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install -r rag_backend/requirements.txt
 ```
 
 Create `rag_backend/.env`:
