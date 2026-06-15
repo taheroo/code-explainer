@@ -28,9 +28,9 @@ SYSTEM_PROMPT = (
     "## Business Impact\n\n"
     "[1-2 sentences on what this means for users or the business]\n\n"
     "## Sources\n\n"
-    "1. [file_path]\n\n"
+    "1. [file_path] — Confidence: [confidence_label]\n\n"
     "   * [one line saying what this file contributes]\n"
-    "2. [file_path]\n\n"
+    "2. [file_path] — Confidence: [confidence_label]\n\n"
     "   * [one line saying what this file contributes]"
 )
 
@@ -41,9 +41,12 @@ def format_context(chunks: Iterable[RetrievedChunk]) -> str:
         location = chunk.file_path
         if chunk.symbol_name:
             location = f"{location}::{chunk.symbol_name}"
+        conf_pct = round(chunk.confidence * 100, 1)
+        label = "High" if conf_pct > 80 else "Medium" if conf_pct >= 50 else "Low"
         parts.append(
             f"--- SOURCE: {location} "
-            f"(lines {chunk.start_line}-{chunk.end_line}) ---\n"
+            f"(lines {chunk.start_line}-{chunk.end_line}) "
+            f"[confidence={conf_pct}% {label}] ---\n"
             f"{chunk.text}"
         )
     return "\n\n".join(parts)
@@ -51,7 +54,7 @@ def format_context(chunks: Iterable[RetrievedChunk]) -> str:
 
 def _summarize_fallback(chunks: list[RetrievedChunk]) -> str:
     numbered = "\n".join(
-        f"{i}. {c.file_path}\n\n   * {c.symbol_name or 'block'}"
+        f"{i}. {c.file_path} — Confidence: {round(c.confidence * 100, 1)}%\n\n   * {c.symbol_name or 'block'}"
         for i, c in enumerate(chunks[:5], 1)
     )
     return (
