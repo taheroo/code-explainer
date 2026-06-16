@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".md", ".sql"}
 SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", "build", ".venv", "venv"}
 
+MAX_PARENT_CHARS = 50000
+
 
 
 
@@ -35,6 +37,9 @@ class ChunkRecord:
     end_line: int
     symbol_name: str
     language: str
+    parent_text: str = ""
+    parent_start_line: int = 0
+    parent_end_line: int = 0
 
     @property
     def id(self) -> str:
@@ -54,6 +59,9 @@ class ChunkRecord:
             "language": self.language,
             "text": self.text,
             "char_count": len(self.text),
+            "parent_text": self.parent_text,
+            "parent_start_line": self.parent_start_line,
+            "parent_end_line": self.parent_end_line,
         }
 
 
@@ -109,6 +117,9 @@ def collect_chunks_from_repo(repo_name: str, repo_path: Path) -> list[ChunkRecor
         rel_path = file_path.relative_to(repo_path).as_posix()
         language = file_path.suffix.lower().lstrip(".") or "unknown"
 
+        total_lines = len(source.splitlines())
+        parent_text = source[:MAX_PARENT_CHARS] if len(source) > MAX_PARENT_CHARS else source
+
         for idx, item in enumerate(raw_chunks):
             text = str(item.get("text", "")).strip()
             if not text:
@@ -124,6 +135,9 @@ def collect_chunks_from_repo(repo_name: str, repo_path: Path) -> list[ChunkRecor
                     end_line=int(item.get("end", 0)),
                     symbol_name=str(item.get("symbol", "")),
                     language=language,
+                    parent_text=parent_text,
+                    parent_start_line=1,
+                    parent_end_line=total_lines,
                 )
             )
 

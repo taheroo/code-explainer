@@ -139,17 +139,19 @@ class LocalQdrantClient:
         sparse_vector: list[tuple[int, float]] | None = None,
         limit: int = 5,
         repo_name: str | None = None,
+        metadata_filter: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        qfilter = None
+        conditions: list[FieldCondition] = []
         if repo_name:
-            qfilter = Filter(
-                must=[
-                    FieldCondition(
-                        key="repo_name",
-                        match=MatchValue(value=repo_name),
-                    )
-                ]
+            conditions.append(
+                FieldCondition(key="repo_name", match=MatchValue(value=repo_name))
             )
+        if metadata_filter:
+            for key, value in metadata_filter.items():
+                conditions.append(
+                    FieldCondition(key=key, match=MatchValue(value=value))
+                )
+        qfilter = Filter(must=conditions) if conditions else None
         dense_limit = limit * 4
         dense_result = self._client.query_points(
             collection_name=self.settings.collection_name,
