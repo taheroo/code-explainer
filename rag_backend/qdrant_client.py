@@ -44,7 +44,7 @@ def _clean_stale_lock(storage_path: str) -> None:
             pass
 
 
-def _create_client_with_retry(storage_path: str, max_retries: int = 5, delay: float = 1.0) -> _QdrantClient:
+def _create_local_client(storage_path: str, max_retries: int = 5, delay: float = 1.0) -> _QdrantClient:
     for attempt in range(max_retries):
         try:
             return _QdrantClient(path=storage_path)
@@ -59,9 +59,14 @@ def _create_client_with_retry(storage_path: str, max_retries: int = 5, delay: fl
 class LocalQdrantClient:
     def __init__(self, settings: QdrantSettings | None = None):
         self.settings = settings or QdrantSettings()
-        storage_path = _find_qdrant_storage()
-        _clean_stale_lock(storage_path)
-        self._client = _create_client_with_retry(storage_path)
+        host = os.getenv("QDRANT_HOST")
+        if host:
+            port = int(os.getenv("QDRANT_PORT", "6333"))
+            self._client = _QdrantClient(host=host, port=port)
+        else:
+            storage_path = _find_qdrant_storage()
+            _clean_stale_lock(storage_path)
+            self._client = _create_local_client(storage_path)
 
     def close(self) -> None:
         self._client.close()
