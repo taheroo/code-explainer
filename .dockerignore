@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+qdrant_storage
+cloned_repos
+.env
+*.md

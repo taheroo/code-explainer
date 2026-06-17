@@ -1,0 +1,37 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  rag-backend:
+    build:
+      context: .
+      dockerfile: rag_backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - REPO_MODE=${REPO_MODE:-monorepo}
+      - MONOREPO_URL=${MONOREPO_URL}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-google/gemma-4-31b-it:free}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-codebase}
+      - HF_TOKEN=${HF_TOKEN}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    volumes:
+      - cloned_repos:/app/cloned_repos
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      - qdrant
+
+volumes:
+  qdrant_data:
+  cloned_repos:
+  hf_cache:
