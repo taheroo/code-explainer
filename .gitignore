@@ -5,3 +5,4 @@ qdrant_storage/
 .env
 cloned_repos/
 code-explainer/
+DEVOPS_CONVERSATION.md
