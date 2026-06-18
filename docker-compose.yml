@@ -26,12 +26,11 @@ services:
       - HF_TOKEN=${HF_TOKEN}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
     volumes:
-      - cloned_repos:/app/cloned_repos
+      - ./cloned_repos:/app/cloned_repos
       - hf_cache:/root/.cache/huggingface
     depends_on:
       - qdrant
 
 volumes:
   qdrant_data:
-  cloned_repos:
   hf_cache:
