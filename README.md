@@ -93,15 +93,37 @@ Do not clone into a nested folder like `cloned_repos/my-repo/` — the engine ex
 
 ## Example response
 
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How does the trust score work?"}'
+```
+
 ```json
 {
-  "answer": "## Summary\nA user provides email/password…\n\n## Business Impact\nOnly verified users can access…",
-  "sources": [{
-    "folder_name": "auth-service",
-    "file_path": "src/authService.ts",
-    "confidence": 0.82,
-    "score": 1.52
-  }]
+  "answer": "## Summary\n\nThe trust score is displayed as a percentage using a visual dial that animates from zero to the final score. The dial changes color based on the score value to indicate different levels of trust, ranging from critical to safe.\n\n## Business Impact\n\nUsers can quickly identify the authenticity of media through a color-coded system where higher scores indicate safer content and lower scores signal higher risk.\n\n## Sources\n\n1. components/trustcheck/trust-score-dial.tsx — Confidence: High\n\n   * Explains the animation logic and the color thresholds for safe, accent, warning, and critical scores.\n2. app/page.tsx — Confidence: High\n\n   * Describes the risk profiles associated with the scores, including Critical, High, Moderate, Low, and Verified.",
+  "sources": [
+    {
+      "folder_name": "components",
+      "file_path": "components/trustcheck/trust-score-dial.tsx",
+      "symbol_name": "TrustScoreDial",
+      "language": "tsx",
+      "start_line": 10,
+      "end_line": 100,
+      "confidence": 0.0,
+      "confidence_label": "Low"
+    },
+    {
+      "folder_name": "app",
+      "file_path": "app/page.tsx",
+      "symbol_name": "Home",
+      "language": "tsx",
+      "start_line": 1,
+      "end_line": 50,
+      "confidence": 0.0,
+      "confidence_label": "Low"
+    }
+  ]
 }
 ```
 
