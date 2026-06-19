@@ -43,6 +43,44 @@ uvicorn rag_backend.main:app --reload
 
 Auto-clones your repo, indexes all service folders, serves on `http://localhost:8000`.
 
+### Using Docker
+
+Prerequisites: [Docker](https://docker.com) (with Compose plugin).
+
+```bash
+# 1. Clone your target repo so the engine can index it
+git clone https://github.com/your-org/your-repo cloned_repos
+
+# 2. Create .env from template and fill in your API keys
+cp .env.example .env
+
+# 3. Build and start both services (Qdrant + rag-backend)
+docker compose up --build -d
+
+# 4. Watch startup logs (models load, then server starts)
+docker compose logs -f rag-backend
+
+# 5. Check health
+curl http://localhost:8000/health
+
+# 6. Ingest the code into Qdrant
+curl -X POST http://localhost:8000/ingest \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# 7. Ask a question
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What does this project do?"}'
+
+# 8. Stop everything
+docker compose down
+```
+
+> **Windows users:** PowerShell replaces `curl` with its own alias. Use `curl.exe` or prefix with `cmd /c "..."`. Example: `cmd /c "curl -s http://localhost:8000/health"`.
+
+The `.env` file lives at the project root (not inside `rag_backend/`), and the `cloned_repos/` directory is bind-mounted into the container so manual clones are visible at runtime.
+
 ## If you want to clone manually
 
 Clone your repo so its root lands directly in `cloned_repos/` at the project root:
