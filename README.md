@@ -1,155 +1,75 @@
 # code-explainer
 
-Ask plain-English questions about any GitHub monorepo. Get business-friendly answers grounded in your actual code.
+Ask plain-English questions about any codebase. Get answers grounded in your actual code, with sources so you know where the info came from.
 
-## Quick start
+## Example
+
+**You ask:** *"How does the trust score work?"*
+
+**The bot answers:**
+
+> **Summary**
+>
+> The trust score is displayed as a percentage using a visual dial that animates from zero to the final score. The dial changes color based on the score value to indicate different levels of trust, ranging from critical to safe.
+>
+> **Business Impact**
+>
+> Users can quickly identify the authenticity of media through a color-coded system where higher scores indicate safer content and lower scores signal higher risk.
+>
+> **Sources**
+> 1. components/trustcheck/trust-score-dial.tsx — Confidence: High
+> 2. app/page.tsx — Confidence: High
+
+---
+
+## Deploy on Railway (1-click)
+
+Push this repo to GitHub, then:
+
+1. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
+2. Railway detects `docker-compose.yml` and creates two services
+3. Remove the auto-created `qdrant` service, click **New** → **Database** → **Add Qdrant** (managed database)
+4. In the `rag-backend` service → **Variables**, add:
+   - `QDRANT_HOST` — copy from the Qdrant plugin's `QDRANT_URL` (remove `http://`)
+   - `QDRANT_PORT` — `6333`
+   - `OPENROUTER_API_KEY`
+   - `GEMINI_API_KEY`
+   - `MONOREPO_URL` — `https://github.com/your-org/your-repo`
+   - `HF_TOKEN`
+   - `GITHUB_TOKEN`
+   - `LLM_MODEL` — `google/gemma-4-31b-it:free`
+5. Railway builds and deploys. Once done, you get a public URL.
+6. Open the URL in your browser — you'll see the API docs at `/docs`.
+7. To index your code, run once: `curl -X POST https://your-url.up.railway.app/ingest -H "Content-Type: application/json" -d '{}'`
+
+---
+
+## Run locally
+
+### Option 1 — Docker (easiest)
 
 ```bash
-git clone https://github.com/taheroo/code-explainer
-cd code-explainer
-```
-
-### Windows
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r rag_backend/requirements.txt
-```
-
-### macOS / Linux (Python 3)
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip3 install -r rag_backend/requirements.txt
-```
-
-Create `rag_backend/.env`:
-
-```env
-REPO_MODE=monorepo
-MONOREPO_URL=https://github.com/your-org/your-repo
-OPENROUTER_API_KEY=sk-or-...       # openrouter.ai
-LLM_MODEL=google/gemma-4-31b-it:free
-QDRANT_COLLECTION=codebase
-HF_TOKEN=hf_...                    # huggingface.co
-GITHUB_TOKEN=                      # optional, for private repos
-```
-
-```bash
-uvicorn rag_backend.main:app --reload
-```
-
-Auto-clones your repo, indexes all service folders, serves on `http://localhost:8000`.
-
-### Using Docker
-
-Prerequisites: [Docker](https://docker.com) (with Compose plugin).
-
-```bash
-# 1. Create .env from template and fill in your API keys
+# 1. Fill in your API keys
 cp .env.example .env
 
-# 2. Build and start both services (Qdrant + rag-backend)
+# 2. Start
 docker compose up --build -d
 
-# 3. Watch startup logs (models load, then server starts)
-docker compose logs -f rag-backend
+# 3. Index your code
+curl -X POST http://localhost:8000/ingest -H "Content-Type: application/json" -d '{}'
 
-# 4. Check health
-curl http://localhost:8000/health
+# 4. Ask a question
+curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"question":"What does this project do?"}'
 
-# 5. Ingest the code into Qdrant
-curl -X POST http://localhost:8000/ingest \
-  -H "Content-Type: application/json" \
-  -d '{}'
-
-# 6. Ask a question
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question":"What does this project do?"}'
-
-# 7. Stop everything
+# 5. Stop
 docker compose down
 ```
 
-> **Windows users:** PowerShell replaces `curl` with its own alias. Use `curl.exe` or prefix with `cmd /c "..."`. Example: `cmd /c "curl -s http://localhost:8000/health"`.
-
-The `.env` file lives at the project root (not inside `rag_backend/`), and the `cloned_repos/` directory is bind-mounted into the container so manual clones are visible at runtime.
-
-## If you want to clone manually
-
-Clone your repo so its root lands directly in `cloned_repos/` at the project root:
+### Option 2 — Manual (Python)
 
 ```bash
-cd code-explainer
-git clone https://github.com/your-org/your-repo cloned_repos
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r rag_backend/requirements.txt
+uvicorn rag_backend.main:app --reload
 ```
-
-If `cloned_repos/` already exists, the auto-cloner skips cloning, so a manual clone works fine.
-
-Do not clone into a nested folder like `cloned_repos/my-repo/` — the engine expects service folders as direct children of `cloned_repos/`, not one level deeper.
-
-## Example response
-
-```bash
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question":"How does the trust score work?"}'
-```
-
-```json
-{
-  "answer": "## Summary\n\nThe trust score is displayed as a percentage using a visual dial that animates from zero to the final score. The dial changes color based on the score value to indicate different levels of trust, ranging from critical to safe.\n\n## Business Impact\n\nUsers can quickly identify the authenticity of media through a color-coded system where higher scores indicate safer content and lower scores signal higher risk.\n\n## Sources\n\n1. components/trustcheck/trust-score-dial.tsx — Confidence: High\n\n   * Explains the animation logic and the color thresholds for safe, accent, warning, and critical scores.\n2. app/page.tsx — Confidence: High\n\n   * Describes the risk profiles associated with the scores, including Critical, High, Moderate, Low, and Verified.",
-  "sources": [
-    {
-      "folder_name": "components",
-      "file_path": "components/trustcheck/trust-score-dial.tsx",
-      "symbol_name": "TrustScoreDial",
-      "language": "tsx",
-      "start_line": 10,
-      "end_line": 100,
-      "confidence": 0.0,
-      "confidence_label": "Low"
-    },
-    {
-      "folder_name": "app",
-      "file_path": "app/page.tsx",
-      "symbol_name": "Home",
-      "language": "tsx",
-      "start_line": 1,
-      "end_line": 50,
-      "confidence": 0.0,
-      "confidence_label": "Low"
-    }
-  ]
-}
-```
-
-## Pipeline
-
-| Step | What happens |
-|---|---|
-| **Ingest** | Scans repos, chunks code by function/class (AST for Python, regex for JS/TS), embeds dense + sparse vectors, stores in local Qdrant |
-| **Retrieve** | Hybrid dense/sparse search → cross-encoder reranking → top 5 chunks |
-| **Generate** | LLM (Gemini or OpenRouter) summarizes chunks with strict grounding prompt |
-
-## Confidence
-
-Cross-encoder scores are normalized through sigmoid: `confidence = 1 / (1 + e^-score)`. All results above `CONFIDENCE_THRESHOLD` (0.0) are returned.
-
-| Label | Confidence |
-|---|---|
-| High | > 70% |
-| Medium | 40–70% |
-| Low | < 40% |
-
-## Endpoints
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/query` | POST | Ask a question, returns answer + sources |
-| `/ingest` | POST | Re-index repos (optional `repo` param) |
-| `/health` | GET | Server health check |
-| `/session/{id}/clear` | GET | Clear chat history |
