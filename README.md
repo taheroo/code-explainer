@@ -48,32 +48,29 @@ Auto-clones your repo, indexes all service folders, serves on `http://localhost:
 Prerequisites: [Docker](https://docker.com) (with Compose plugin).
 
 ```bash
-# 1. Clone your target repo so the engine can index it
-git clone https://github.com/your-org/your-repo cloned_repos
-
-# 2. Create .env from template and fill in your API keys
+# 1. Create .env from template and fill in your API keys
 cp .env.example .env
 
-# 3. Build and start both services (Qdrant + rag-backend)
+# 2. Build and start both services (Qdrant + rag-backend)
 docker compose up --build -d
 
-# 4. Watch startup logs (models load, then server starts)
+# 3. Watch startup logs (models load, then server starts)
 docker compose logs -f rag-backend
 
-# 5. Check health
+# 4. Check health
 curl http://localhost:8000/health
 
-# 6. Ingest the code into Qdrant
+# 5. Ingest the code into Qdrant
 curl -X POST http://localhost:8000/ingest \
   -H "Content-Type: application/json" \
   -d '{}'
 
-# 7. Ask a question
+# 6. Ask a question
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{"question":"What does this project do?"}'
 
-# 8. Stop everything
+# 7. Stop everything
 docker compose down
 ```
 
@@ -94,15 +91,7 @@ If `cloned_repos/` already exists, the auto-cloner skips cloning, so a manual cl
 
 Do not clone into a nested folder like `cloned_repos/my-repo/` — the engine expects service folders as direct children of `cloned_repos/`, not one level deeper.
 
-## Ask a question
-
-```bash
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question":"How does user login work?"}'
-```
-
-Response:
+## Example response
 
 ```json
 {
