@@ -59,14 +59,18 @@ def _create_local_client(storage_path: str, max_retries: int = 5, delay: float =
 class LocalQdrantClient:
     def __init__(self, settings: QdrantSettings | None = None):
         self.settings = settings or QdrantSettings()
-        host = os.getenv("QDRANT_HOST")
-        if host:
-            port = int(os.getenv("QDRANT_PORT", "6333"))
-            self._client = _QdrantClient(host=host, port=port)
+        url = os.getenv("QDRANT_URL")
+        if url:
+            self._client = _QdrantClient(url=url, api_key=os.getenv("QDRANT_API_KEY"))
         else:
-            storage_path = _find_qdrant_storage()
-            _clean_stale_lock(storage_path)
-            self._client = _create_local_client(storage_path)
+            host = os.getenv("QDRANT_HOST")
+            if host:
+                port = int(os.getenv("QDRANT_PORT", "6333"))
+                self._client = _QdrantClient(host=host, port=port)
+            else:
+                storage_path = _find_qdrant_storage()
+                _clean_stale_lock(storage_path)
+                self._client = _create_local_client(storage_path)
 
     def close(self) -> None:
         self._client.close()
