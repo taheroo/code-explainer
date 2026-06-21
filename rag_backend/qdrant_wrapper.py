@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 from qdrant_client import QdrantClient as _QdrantClient
 from qdrant_client.http.models import (
@@ -130,17 +133,20 @@ class LocalQdrantClient:
         )
 
     def delete_repo(self, repo_name: str) -> None:
-        self._client.delete(
-            collection_name=self.settings.collection_name,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="repo_name",
-                        match=MatchValue(value=repo_name),
+        try:
+            self._client.delete(
+                collection_name=self.settings.collection_name,
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="repo_name",
+                            match=MatchValue(value=repo_name),
                     )
                 ]
             ),
         )
+        except Exception:
+            log.warning("Failed to delete existing data for repo '%s' (index may not exist yet)", repo_name)
 
     def search(
         self,
