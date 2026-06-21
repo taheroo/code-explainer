@@ -8,7 +8,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 # 2. Requirements second 
-COPY rag_backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 3. Download models third 
@@ -35,4 +35,4 @@ COPY --from=builder /app /app
 EXPOSE 8000
 
 # Fire up the lightweight production server
-CMD ["uvicorn", "rag_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
