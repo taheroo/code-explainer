@@ -10,7 +10,7 @@ from typing import Any
 
 from chunker import chunk_code
 from embedder import embed_texts
-from qdrant_client import get_qdrant_client
+from qdrant_wrapper import get_qdrant_client
 from sparse_embedder import embed_sparse_batch
 
 log = logging.getLogger(__name__)

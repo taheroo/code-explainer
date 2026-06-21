@@ -7,7 +7,7 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from embedder import embed_query
-from qdrant_client import get_qdrant_client
+from qdrant_wrapper import get_qdrant_client
 from sparse_embedder import embed_sparse
 
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
