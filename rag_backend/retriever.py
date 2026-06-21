@@ -6,9 +6,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from .embedder import embed_query
-from .qdrant_client import get_qdrant_client
-from .sparse_embedder import embed_sparse
+from embedder import embed_query
+from qdrant_client import get_qdrant_client
+from sparse_embedder import embed_sparse
 
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
 CONFIDENCE_THRESHOLD = -999.0
@@ -147,7 +147,7 @@ def _rrf_merge(
 
 
 def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> list[RetrievedChunk]:
-    from .llm import expand_query, parse_query
+    from llm import expand_query, parse_query
 
     client = get_qdrant_client()
     client.ensure_collection()

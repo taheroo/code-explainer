@@ -8,7 +8,7 @@ import httpx
 from dotenv import load_dotenv
 from pathlib import Path
 
-from .retriever import RetrievedChunk
+from retriever import RetrievedChunk
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 

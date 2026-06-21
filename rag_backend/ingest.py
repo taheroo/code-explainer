@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .chunker import chunk_code
-from .embedder import embed_texts
-from .qdrant_client import get_qdrant_client
-from .sparse_embedder import embed_sparse_batch
+from chunker import chunk_code
+from embedder import embed_texts
+from qdrant_client import get_qdrant_client
+from sparse_embedder import embed_sparse_batch
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class ChunkRecord:
 
 
 def get_repo_paths() -> list[tuple[str, Path]]:
-    from .repo_manager import resolve_repos
+    from repo_manager import resolve_repos
     return resolve_repos()
 
 
