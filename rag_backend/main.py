@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from ingest import ingest_all, ingest_repo
+from .ingest import ingest_all, ingest_repo
 from .llm import generate_answer
 from .retriever import QueryRequest, retrieve
 from .repo_manager import resolve_repos
