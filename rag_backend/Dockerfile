@@ -1,4 +1,4 @@
-# STAGE 1: Build & Dependency Gathering
+# STAGE 1: Build & Dependency Gathering (force rebuild)
 FROM python:3.11-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
