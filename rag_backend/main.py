@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -19,19 +18,9 @@ from retriever import QueryRequest, retrieve
 from repo_manager import resolve_repos
 
 
-background_tasks: set[asyncio.Task] = set()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async def backfill():
-        repos = resolve_repos()
-        for repo_name, repo_path in repos:
-            ingest_repo(repo_name=repo_name, repo_path=repo_path)
-
-    task = asyncio.create_task(backfill())
-    background_tasks.add(task)
-    task.add_done_callback(background_tasks.discard)
+    log.info("Starting up — ingestion runs on-demand via /ingest endpoint")
     yield
 
 
