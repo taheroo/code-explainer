@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -12,10 +15,15 @@ from pydantic import BaseModel
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+log = logging.getLogger(__name__)
+
 from ingest import ingest_all, ingest_repo
 from llm import generate_answer
 from retriever import QueryRequest, retrieve
 from repo_manager import resolve_repos
+
+cache: dict[str, dict] = {}
+CACHE_TTL = 3600
 
 
 @asynccontextmanager
@@ -153,15 +161,30 @@ def ingest(request: IngestRequest) -> dict[str, int | str]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "thanks", "thank you"}
+
 @app.post("/query")
 def query(request: QueryRequest) -> QueryResult:
+    q = request.question.lower().strip()
+    if q in GREETINGS or len(q) < 3:
+        return QueryResult(
+            answer="Hello! I'm your code assistant. Ask me anything about the codebase — what a component does, how a feature works, or where something is defined.",
+            sources=[],
+        )
+
+    key = hashlib.md5(q.encode()).hexdigest()
+    if key in cache and time.time() - cache[key]["ts"] < CACHE_TTL:
+        return cache[key]["response"]
+
     try:
         chunks = retrieve(request.question, target_repo=request.target_repo, top_k=request.top_k)
         answer = generate_answer(request.question, chunks)
-        return QueryResult(
+        result = QueryResult(
             answer=answer,
             sources=[chunk.source for chunk in chunks],
         )
+        cache[key] = {"response": result, "ts": time.time()}
+        return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -17,7 +17,7 @@ CONFIDENCE_THRESHOLD = -999.0
 class QueryRequest(BaseModel):
     question: str
     target_repo: Optional[str] = None
-    top_k: int = 5
+    top_k: int = 2
     session_id: Optional[str] = None
 
 
@@ -146,29 +146,13 @@ def _rrf_merge(
     return [entry["chunk"] for entry in scored]
 
 
-def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> list[RetrievedChunk]:
-    from llm import expand_query, parse_query
-
+def retrieve(question: str, target_repo: str | None = None, top_k: int = 2) -> list[RetrievedChunk]:
     client = get_qdrant_client()
     client.ensure_collection()
 
-    cleaned_query, metadata_filter = parse_query(question)
-    variants = expand_query(cleaned_query)
+    results = _search_variant(question, client, top_k, target_repo, None)
 
-    per_variant_results: list[list[RetrievedChunk]] = []
-    for variant in variants:
-        results = _search_variant(variant, client, top_k, target_repo, metadata_filter)
-        per_variant_results.append(results)
-
-    merged = _rrf_merge(per_variant_results)
-    seen: dict[str, RetrievedChunk] = {}
-    for c in merged:
-        if c.file_path not in seen or c.score > seen[c.file_path].score:
-            seen[c.file_path] = c
-    deduped = [seen[c.file_path] for c in merged if c.file_path in seen and seen[c.file_path] is c]
-
-    reranked = _rerank(question, deduped, top_k=top_k)
-    _normalize_scores(reranked)
-    if reranked and reranked[0].score < CONFIDENCE_THRESHOLD:
+    _normalize_scores(results)
+    if results and results[0].score < CONFIDENCE_THRESHOLD:
         return []
-    return reranked
+    return results[:top_k]

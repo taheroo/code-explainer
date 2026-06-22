@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Iterable
 
 import httpx
 from dotenv import load_dotenv
@@ -12,55 +11,23 @@ from retriever import RetrievedChunk
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-MAX_RETRIES = 3
-RETRY_DELAY = 2
 
-SYSTEM_PROMPT = (
-    "You are a business assistant explaining software to non-technical teams. "
-    "Answer ONLY from provided context. No code, no jargon, no technical terms. "
-    "No emojis, no special Unicode symbols (stars, arrows, etc). "
-    "If context is insufficient say so clearly.\n\n"
-    "Format every response exactly like this:\n\n"
-    "## Summary\n\n"
-    "[2-3 plain English sentences explaining what happens]\n\n"
-    "## Business Impact\n\n"
-    "[1-2 sentences on what this means for users or the business]\n\n"
-    "## Sources\n\n"
-    "1. [file_path] — Confidence: [confidence_label]\n\n"
-    "   * [one line saying what this file contributes]\n"
-    "2. [file_path] — Confidence: [confidence_label]\n\n"
-    "   * [one line saying what this file contributes]"
-)
+SYSTEM_PROMPT = "Answer the question using ONLY the provided code context. Be brief, plain English, no code. If unsure say so. Format: ## Summary (2-3 lines) then ## Sources with file paths."
 
 
-PARENT_DISPLAY_CHARS = 8000
+PARENT_DISPLAY_CHARS = 800
 
 
 def format_context(chunks: Iterable[RetrievedChunk]) -> str:
     parts: list[str] = []
-    seen_parents: set[str] = set()
     for chunk in chunks:
         location = chunk.file_path
         if chunk.symbol_name:
             location = f"{location}::{chunk.symbol_name}"
-        conf_pct = round(chunk.confidence * 100, 1)
-        label = "High" if conf_pct > 80 else "Medium" if conf_pct >= 50 else "Low"
-        ctx = (
-            f"--- SOURCE: {location} "
-            f"(lines {chunk.start_line}-{chunk.end_line}) "
-            f"[confidence={conf_pct}% {label}] ---\n"
-            f"{chunk.text}"
-        )
-        if chunk.parent_text and chunk.file_path not in seen_parents:
-            seen_parents.add(chunk.file_path)
-            parent_trunc = chunk.parent_text[:PARENT_DISPLAY_CHARS]
-            ctx += (
-                f"\n\n--- PARENT CONTEXT ({chunk.file_path} "
-                f"lines {chunk.parent_start_line}-{chunk.parent_end_line}) ---\n"
-                f"{parent_trunc}"
-            )
+        ctx = f"--- {location} ---\n{chunk.text}"
         parts.append(ctx)
     return "\n\n".join(parts)
 
@@ -100,7 +67,7 @@ def _call_openrouter(api_key: str, model: str, prompt: str, system_prompt: str |
             with httpx.Client(timeout=60.0) as client:
                 response = client.post(OPENROUTER_URL, json=payload, headers=headers)
                 if response.status_code == 429 and attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (2 ** attempt))
+                    time.sleep(5 * (2 ** attempt))
                     continue
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"]
@@ -123,7 +90,7 @@ def _call_gemini(api_key: str, model: str, prompt: str, system_prompt: str | Non
             with httpx.Client(timeout=60.0) as client:
                 response = client.post(url, json=payload)
                 if response.status_code == 429 and attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (2 ** attempt))
+                    time.sleep(5 * (2 ** attempt))
                     continue
                 response.raise_for_status()
                 return response.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -132,6 +99,28 @@ def _call_gemini(api_key: str, model: str, prompt: str, system_prompt: str | Non
                 time.sleep(RETRY_DELAY * (2 ** attempt))
                 continue
     return None
+
+
+def _call_groq(api_key: str, model: str, prompt: str, system_prompt: str | None = None) -> str | None:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.0,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(GROQ_URL, json=payload, headers=headers)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+    except Exception:
+        return None
 
 
 def expand_query(question: str) -> list[str]:
@@ -144,11 +133,16 @@ def expand_query(question: str) -> list[str]:
         f"Original: {question}"
     )
 
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
     result = None
-    if gemini_key:
-        model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
-        result = _call_gemini(gemini_key, model, prompt, system_prompt=system_prompt)
+    if groq_key:
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        result = _call_groq(groq_key, model, prompt, system_prompt=system_prompt)
+    if not result:
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+            result = _call_gemini(gemini_key, model, prompt, system_prompt=system_prompt)
     if not result:
         api_key = os.getenv("OPENROUTER_API_KEY")
         if api_key:
@@ -180,11 +174,16 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
         f"Question: {question}"
     )
 
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
     result = None
-    if gemini_key:
-        model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
-        result = _call_gemini(gemini_key, model, prompt, system_prompt=system_prompt)
+    if groq_key:
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        result = _call_groq(groq_key, model, prompt, system_prompt=system_prompt)
+    if not result:
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+            result = _call_gemini(gemini_key, model, prompt, system_prompt=system_prompt)
     if not result:
         api_key = os.getenv("OPENROUTER_API_KEY")
         if api_key:
@@ -222,19 +221,25 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
     context = format_context(chunks)
     prompt = f"Context:\n{context}\n\nQuestion: {question}"
 
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        result = _call_groq(groq_key, model, prompt)
+        if result:
+            return result
+
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
-        model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
         result = _call_gemini(gemini_key, model, prompt)
         if result:
             return result
-        return _summarize_fallback(chunks)
 
     api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is not set.")
-    model = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
-    result = _call_openrouter(api_key, model, prompt)
-    if result:
-        return result
+    if api_key:
+        model = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
+        result = _call_openrouter(api_key, model, prompt)
+        if result:
+            return result
+
     return _summarize_fallback(chunks)
