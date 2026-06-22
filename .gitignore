@@ -6,3 +6,5 @@ qdrant_storage/
 cloned_repos/
 code-explainer/
 DEVOPS_CONVERSATION.md
+
+.railway-config-pull-*/
