@@ -82,6 +82,9 @@ def iter_repo_files(repo_path: Path):
         if any(part in SKIP_DIRS for part in path.parts):
             continue
 
+        if path.stem.startswith("test_"):
+            continue
+
         if path.suffix.lower() in SUPPORTED_EXTENSIONS:
             yield path
 
