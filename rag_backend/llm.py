@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 import httpx
 from dotenv import load_dotenv
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from retriever import RetrievedChunk
 
@@ -107,13 +110,21 @@ def _call_groq(api_key: str, model: str, prompt: str, system_prompt: str | None 
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(GROQ_URL, json=payload, headers=headers)
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
-    except Exception:
-        return None
+    for attempt in range(MAX_RETRIES):
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                response = client.post(GROQ_URL, json=payload, headers=headers)
+                if response.status_code == 429 and attempt < MAX_RETRIES - 1:
+                    time.sleep(5 * (2 ** attempt))
+                    continue
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"]
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as exc:
+            log.warning("Groq API attempt %d/%d failed: %s", attempt + 1, MAX_RETRIES, exc)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY * (2 ** attempt))
+                continue
+    return None
 
 
 def expand_query(question: str) -> list[str]:

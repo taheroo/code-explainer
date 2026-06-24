@@ -11,7 +11,7 @@ from qdrant_wrapper import get_qdrant_client
 from sparse_embedder import embed_sparse
 
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
-CONFIDENCE_THRESHOLD = -999.0
+CONFIDENCE_THRESHOLD = -1.5
 
 
 class QueryRequest(BaseModel):
@@ -73,13 +73,15 @@ def _rerank(question: str, chunks: list[RetrievedChunk], top_k: int = 5) -> list
 def _normalize_scores(chunks: list[RetrievedChunk]) -> None:
     if not chunks:
         return
-    max_score = max(c.score for c in chunks)
-    if max_score <= 0:
+    scores = [c.score for c in chunks]
+    min_s = min(scores)
+    max_s = max(scores)
+    if max_s <= min_s:
         for c in chunks:
             c.confidence = 0.0
         return
     for c in chunks:
-        raw = c.score / max_score
+        raw = (c.score - min_s) / (max_s - min_s)
         c.confidence = round(max(0.0, min(raw, 1.0)), 4)
 
 
@@ -146,13 +148,23 @@ def _rrf_merge(
     return [entry["chunk"] for entry in scored]
 
 
-def retrieve(question: str, target_repo: str | None = None, top_k: int = 2) -> list[RetrievedChunk]:
+def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> list[RetrievedChunk]:
     client = get_qdrant_client()
     client.ensure_collection()
 
     results = _search_variant(question, client, top_k, target_repo, None)
 
-    _normalize_scores(results)
-    if results and results[0].score < CONFIDENCE_THRESHOLD:
+    if not results:
         return []
-    return results[:top_k]
+
+    merged = _rrf_merge([results])
+
+    reranked = _rerank(question, merged, top_k)
+
+    deduped = _deduplicate_by_path(reranked)
+
+    _normalize_scores(deduped)
+    if deduped and deduped[0].confidence < CONFIDENCE_THRESHOLD:
+        return []
+
+    return deduped[:top_k]
