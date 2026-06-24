@@ -74,7 +74,7 @@ def root() -> str:
     .msg.bot .answer { white-space: pre-wrap; }
     .msg.bot .answer h2 { font-size: 1rem; margin: 8px 0 4px; }
     .msg.bot .answer hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
-    .msg.bot .source { font-size: 0.8rem; color: #666; margin-top: 4px; }
+
     .input-row { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #eee; }
     .input-row input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; outline: none; }
     .input-row input:focus { border-color: #007aff; }

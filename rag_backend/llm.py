@@ -15,7 +15,9 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-SYSTEM_PROMPT = "Answer the question using ONLY the provided code context. Be brief, plain English, no code. If unsure say so. Format: ## Summary (2-3 lines) then ## Sources with file paths."
+MAX_RETRIES = 2
+RETRY_DELAY = 2
+SYSTEM_PROMPT = "You are a business translator for non-technical stakeholders (product owners, support, business teams). Answer using ONLY the provided code context. Write a thorough explanation (minimum 3 paragraphs, 150-250 words) in plain business language. Cover: what the feature does from a user perspective, the business problem it solves, and what impact it has on users. No code, no technical jargon, no implementation details. If unsure say so."
 
 
 PARENT_DISPLAY_CHARS = 800
@@ -33,19 +35,10 @@ def format_context(chunks: Iterable[RetrievedChunk]) -> str:
 
 
 def _summarize_fallback(chunks: list[RetrievedChunk]) -> str:
-    numbered = "\n".join(
-        f"{i}. {c.file_path} — Confidence: {round(c.confidence * 100, 1)}%\n\n   * {c.symbol_name or 'block'}"
-        for i, c in enumerate(chunks[:5], 1)
-    )
     return (
-        "## Summary\n\n"
         "The LLM service is temporarily unavailable. Based on the retrieved "
-        "code context, relevant information has been found in the source files below.\n\n"
-        "## Business Impact\n\n"
-        "Unable to generate a natural-language explanation at this time. "
-        "Please review the source files directly.\n\n"
-        "## Sources\n\n"
-        f"{numbered}"
+        "code context, relevant information has been found to answer your question. "
+        "Please try again later or check the source files directly."
     )
 
 
@@ -115,7 +108,7 @@ def _call_groq(api_key: str, model: str, prompt: str, system_prompt: str | None 
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=30.0) as client:
             response = client.post(GROQ_URL, json=payload, headers=headers)
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
@@ -212,7 +205,6 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
 def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
     if not chunks:
         return (
-            "## Summary\n\n"
             "I could not find any relevant information in the codebase "
             "to answer your question. Please try rephrasing it "
             "or ask about a different topic."
