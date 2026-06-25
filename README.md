@@ -101,29 +101,7 @@ curl -X POST http://localhost:8000/query \
 
 ```json
 {
-  "answer": "## Summary\n\nThe trust score is displayed as a percentage using a visual dial that animates from zero to the final score. The dial changes color based on the score value to indicate different levels of trust, ranging from critical to safe.\n\n## Business Impact\n\nUsers can quickly identify the authenticity of media through a color-coded system where higher scores indicate safer content and lower scores signal higher risk.\n\n## Sources\n\n1. components/trustcheck/trust-score-dial.tsx — Confidence: High\n\n   * Explains the animation logic and the color thresholds for safe, accent, warning, and critical scores.\n2. app/page.tsx — Confidence: High\n\n   * Describes the risk profiles associated with the scores, including Critical, High, Moderate, Low, and Verified.",
-  "sources": [
-    {
-      "folder_name": "components",
-      "file_path": "components/trustcheck/trust-score-dial.tsx",
-      "symbol_name": "TrustScoreDial",
-      "language": "tsx",
-      "start_line": 10,
-      "end_line": 100,
-      "confidence": 0.0,
-      "confidence_label": "Low"
-    },
-    {
-      "folder_name": "app",
-      "file_path": "app/page.tsx",
-      "symbol_name": "Home",
-      "language": "tsx",
-      "start_line": 1,
-      "end_line": 50,
-      "confidence": 0.0,
-      "confidence_label": "Low"
-    }
-  ]
+  "answer": "The idea of this project appears to be a trust score visualization feature. From a user perspective, it displays a score, likely indicating the level of trust or credibility, in a graphical and animated manner.\n\nThe business problem it solves is to provide a clear and engaging way to communicate trust scores to users, helping them make informed decisions. The impact on users is that they can quickly and easily understand the trust score, with the animation and colors used to convey the score in a visually appealing and intuitive way."
 }
 ```
 
@@ -134,7 +112,6 @@ The app is deployed on **Railway** with **Qdrant Cloud** for vector storage.
 ### Live instance
 
 - **URL:** https://rendoohelp-production.up.railway.app
-- **Region:** San Francisco (sfo)
 - **Qdrant:** Managed cloud instance for persistent vector data
 
 ### Architecture
