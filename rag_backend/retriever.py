@@ -155,12 +155,19 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
     client = get_qdrant_client()
     client.ensure_collection()
 
-    results = _search_variant(question, client, top_k, target_repo, None)
+    from llm import expand_query
+    variants = expand_query(question)
 
-    if not results:
+    all_results: list[list[RetrievedChunk]] = []
+    for q in variants:
+        results = _search_variant(q, client, top_k, target_repo, None)
+        if results:
+            all_results.append(results)
+
+    if not all_results:
         return []
 
-    merged = _rrf_merge([results])
+    merged = _rrf_merge(all_results)
 
     reranked = _rerank(question, merged, top_k)
 
