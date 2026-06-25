@@ -20,7 +20,7 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 MAX_RETRIES = 2
 RETRY_DELAY = 2
-SYSTEM_PROMPT = "You are a business translator for non-technical stakeholders (product owners, support, business teams). Answer using ONLY the provided code context. Write a thorough explanation (minimum 3 paragraphs, 150-250 words) in plain business language. Cover: what the feature does from a user perspective, the business problem it solves, and what impact it has on users. No code, no technical jargon, no implementation details. If unsure say so."
+SYSTEM_PROMPT = "You are a business translator for non-technical stakeholders (product owners, support, business teams). Answer using ONLY the provided code context. Write a thorough explanation (2 paragraphs max, 80-150 words) in plain business language. Cover: what the feature does from a user perspective, the business problem it solves, and what impact it has on users. No code, no technical jargon, no implementation details. If unsure say so."
 
 
 PARENT_DISPLAY_CHARS = 800
