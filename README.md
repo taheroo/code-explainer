@@ -127,17 +127,49 @@ curl -X POST http://localhost:8000/query \
 }
 ```
 
+## Deployment
+
+The app is deployed on **Railway** with **Qdrant Cloud** for vector storage.
+
+### Live instance
+
+- **URL:** https://rendoohelp-production.up.railway.app
+- **Region:** San Francisco (sfo)
+- **Qdrant:** Managed cloud instance for persistent vector data
+
+### Architecture
+
+| Component | Service |
+|---|---|
+| **App server** | Railway — FastAPI (uvicorn) inside Docker |
+| **Vector DB** | Qdrant Cloud — dense + sparse hybrid search |
+| **LLM** | OpenRouter / Groq (Gemini, LLaMA, Gemma) |
+| **Embeddings** | Sentence Transformers (BGE-small) loaded at runtime |
+
+### Environment variables (Railway dashboard)
+
+```env
+QDRANT_URL=https://your-qdrant-cloud-instance.cloud.qdrant.io
+QDRANT_API_KEY=qdrant-...
+OPENROUTER_API_KEY=sk-or-...
+GROQ_API_KEY=gsk-...
+REPO_MODE=monorepo
+MONOREPO_URL=https://github.com/your-org/your-repo
+```
+
+The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local development (with a local Qdrant container). On Railway, Qdrant Cloud replaces the local container.
+
 ## Pipeline
 
 | Step | What happens |
 |---|---|
-| **Ingest** | Scans repos, chunks code by function/class (AST for Python, regex for JS/TS), embeds dense + sparse vectors, stores in local Qdrant |
+| **Ingest** | Scans repos, chunks code by function/class (AST for Python, regex for JS/TS), embeds dense + sparse vectors, stores in Qdrant |
 | **Retrieve** | Hybrid dense/sparse search → cross-encoder reranking → top 5 chunks |
-| **Generate** | LLM (Gemini or OpenRouter) summarizes chunks with strict grounding prompt |
+| **Generate** | LLM (Groq/OpenRouter) summarizes chunks with strict grounding prompt |
 
 ## Confidence
 
-Cross-encoder scores are normalized through sigmoid: `confidence = 1 / (1 + e^-score)`. All results above `CONFIDENCE_THRESHOLD` (0.0) are returned.
+Cross-encoder scores are normalized through min-max scaling to [0, 1].
 
 | Label | Confidence |
 |---|---|
@@ -149,7 +181,7 @@ Cross-encoder scores are normalized through sigmoid: `confidence = 1 / (1 + e^-s
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/query` | POST | Ask a question, returns answer + sources |
+| `/query` | POST | Ask a question, returns answer |
 | `/ingest` | POST | Re-index repos (optional `repo` param) |
 | `/health` | GET | Server health check |
 | `/session/{id}/clear` | GET | Clear chat history |
