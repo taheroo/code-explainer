@@ -181,7 +181,7 @@ def query(request: QueryRequest) -> QueryResult:
         answer = generate_answer(request.question, chunks)
         result = QueryResult(
             answer=answer,
-            sources=[chunk.source for chunk in chunks],
+            sources=[],
         )
         cache[key] = {"response": result, "ts": time.time()}
         return result
