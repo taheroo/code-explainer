@@ -167,16 +167,6 @@ The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local 
 | **Retrieve** | Hybrid dense/sparse search → cross-encoder reranking → top 5 chunks |
 | **Generate** | LLM (Groq/OpenRouter) summarizes chunks with strict grounding prompt |
 
-## Confidence
-
-Cross-encoder scores are normalized through min-max scaling to [0, 1].
-
-| Label | Confidence |
-|---|---|
-| High | > 70% |
-| Medium | 40–70% |
-| Low | < 40% |
-
 ## Endpoints
 
 | Endpoint | Method | Description |
