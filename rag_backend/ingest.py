@@ -74,8 +74,9 @@ def get_repo_paths() -> list[tuple[str, Path]]:
 # FILE DISCOVERY
 # ----------------------------
 
-def iter_repo_files(repo_path: Path):
-    for path in repo_path.rglob("*"):
+def iter_repo_files(repo_path: Path, recurse: bool = True):
+    files = repo_path.rglob("*") if recurse else repo_path.iterdir()
+    for path in files:
         if not path.is_file():
             continue
 
@@ -98,7 +99,8 @@ def collect_chunks_from_repo(repo_name: str, repo_path: Path) -> list[ChunkRecor
 
     log.info("🔍 Scanning repo directory: %s", repo_path)
 
-    for file_path in iter_repo_files(repo_path):
+    recurse = repo_name != "_root"
+    for file_path in iter_repo_files(repo_path, recurse=recurse):
         try:
             source = file_path.read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:

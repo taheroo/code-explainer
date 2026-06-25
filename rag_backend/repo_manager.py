@@ -48,4 +48,9 @@ def resolve_repos() -> list[tuple[str, Path]]:
     for child in sorted(CLONE_DIR.iterdir()):
         if child.is_dir() and child.name not in SKIP_DIRS:
             repos.append((child.name, child))
+
+    root_files = [f for f in CLONE_DIR.iterdir() if f.is_file()]
+    if root_files:
+        repos.insert(0, ("_root", CLONE_DIR))
+
     return repos

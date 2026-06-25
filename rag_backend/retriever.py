@@ -85,12 +85,15 @@ def _normalize_scores(chunks: list[RetrievedChunk]) -> None:
         c.confidence = round(max(0.0, min(raw, 1.0)), 4)
 
 
-def _deduplicate_by_path(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-    seen: dict[str, RetrievedChunk] = {}
+def _deduplicate_exact(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    seen: set[str] = set()
+    deduped = []
     for c in chunks:
-        if c.file_path not in seen or c.score > seen[c.file_path].score:
-            seen[c.file_path] = c
-    return [seen[c.file_path] for c in chunks if c.file_path in seen and seen[c.file_path] is c]
+        key = f"{c.file_path}::{c.start_line}::{c.end_line}"
+        if key not in seen:
+            seen.add(key)
+            deduped.append(c)
+    return deduped
 
 
 def _search_variant(
@@ -161,7 +164,7 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
 
     reranked = _rerank(question, merged, top_k)
 
-    deduped = _deduplicate_by_path(reranked)
+    deduped = _deduplicate_exact(reranked)
 
     _normalize_scores(deduped)
     if deduped and deduped[0].confidence < CONFIDENCE_THRESHOLD:

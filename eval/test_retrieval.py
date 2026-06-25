@@ -5,7 +5,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "rag_backend"))
 
-from rag_backend.retriever import retrieve, RetrievedChunk, _rerank, _rrf_merge, _deduplicate_by_path
+from rag_backend.retriever import retrieve, RetrievedChunk, _rerank, _rrf_merge, _deduplicate_exact
 
 
 def test_retrieval_returns_results():
@@ -26,13 +26,13 @@ def test_rerank_produces_differentiated_scores():
     )
 
 
-def test_deduplicate_by_path():
+def test_deduplicate_exact():
     chunks = retrieve("How does authentication work?", top_k=10)
     assert len(chunks) >= 2, "Need at least 2 chunks for dedup test"
-    deduped = _deduplicate_by_path(chunks)
-    paths = [c.file_path for c in deduped]
-    assert len(paths) == len(set(paths)), (
-        f"Dedup should remove duplicate file paths, got: {paths}"
+    duped = chunks + chunks[:2]
+    deduped = _deduplicate_exact(duped)
+    assert len(deduped) == len(chunks), (
+        f"Dedup should remove exact duplicates, got {len(deduped)} from {len(duped)}"
     )
 
 
