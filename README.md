@@ -136,6 +136,29 @@ MONOREPO_URL=https://github.com/your-org/your-repo
 
 The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local development (with a local Qdrant container). On Railway, Qdrant Cloud replaces the local container.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    User["👤 User"] -->|"POST /query"| API["FastAPI<br/>(Railway)"]
+    API -->|"embed query"| Embedder["BGE-small<br/>Embedder"]
+    API -->|"sparse embed"| Sparse["Token<br/>Sparse Embedder"]
+    Embedder -->|"dense vector"| Qdrant["Qdrant Cloud<br/>Hybrid Search"]
+    Sparse -->|"sparse vector"| Qdrant
+    Qdrant -->|"top chunks"| Reranker["Cross-Encoder<br/>Reranker"]
+    Reranker -->|"reranked chunks"| LLM["Groq / OpenRouter<br/>LLM"]
+    LLM -->|"answer"| API
+    API -->|"answer"| User
+
+    subgraph Ingest["Ingest Pipeline"]
+        Repo["GitHub Repo"] -->|"clone"| Chunker["AST/Regex<br/>Chunker"]
+        Chunker -->|"chunks"| Embedder
+        Chunker -->|"chunks"| Sparse
+        Embedder -->|"vectors"| Qdrant
+        Sparse -->|"vectors"| Qdrant
+    end
+```
+
 ## Pipeline
 
 | Step | What happens |
