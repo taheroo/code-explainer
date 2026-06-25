@@ -51,7 +51,6 @@ class IngestRequest(BaseModel):
 
 class QueryResult(BaseModel):
     answer: str
-    sources: list[dict]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -167,10 +166,7 @@ GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good eveni
 def query(request: QueryRequest) -> QueryResult:
     q = request.question.lower().strip()
     if q in GREETINGS or len(q) < 3:
-        return QueryResult(
-            answer="Hello! I'm your code assistant. Ask me anything about the codebase — what a component does, how a feature works, or where something is defined.",
-            sources=[],
-        )
+        return QueryResult(answer="Hello! I'm your code assistant. Ask me anything about the codebase — what a component does, how a feature works, or where something is defined.")
 
     key = hashlib.md5(q.encode()).hexdigest()
     if key in cache and time.time() - cache[key]["ts"] < CACHE_TTL:
@@ -179,10 +175,7 @@ def query(request: QueryRequest) -> QueryResult:
     try:
         chunks = retrieve(request.question, target_repo=request.target_repo, top_k=request.top_k)
         answer = generate_answer(request.question, chunks)
-        result = QueryResult(
-            answer=answer,
-            sources=[],
-        )
+        result = QueryResult(answer=answer)
         cache[key] = {"response": result, "ts": time.time()}
         return result
     except Exception as exc:
