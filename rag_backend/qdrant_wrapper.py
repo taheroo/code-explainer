@@ -40,6 +40,11 @@ def _find_qdrant_storage() -> str:
 
 def _clean_stale_lock(storage_path: str) -> None:
     lock_file = Path(storage_path) / ".lock"
+    try:
+        import portalocker
+        portalocker.Lock(str(lock_file), flags=portalocker.LOCK_EX).release()
+    except Exception:
+        pass
     if lock_file.exists():
         try:
             lock_file.unlink()

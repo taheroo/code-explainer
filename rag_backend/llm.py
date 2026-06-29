@@ -10,7 +10,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-from retriever import RetrievedChunk
+from .retriever import RetrievedChunk
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -20,7 +20,7 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 MAX_RETRIES = 2
 RETRY_DELAY = 2
-SYSTEM_PROMPT = "You explain code in plain language for non-technical people. Answer ONLY from the provided context. Be clear and direct — no code, no jargon, no implementation details. If unsure, say so."
+SYSTEM_PROMPT = "You explain code in plain language for non-technical people. Answer ONLY from the provided context. Be clear and direct — no code, no jargon, no implementation details. Never use technical terms like 'neural artifacts', model names (e.g. 'LLaMA 3.2 Vision'), or ML jargon like 'latent manifold'. If the source text contains technical terms, translate them into plain business language — never copy them verbatim into the answer. If unsure, say so."
 
 
 PARENT_DISPLAY_CHARS = 800

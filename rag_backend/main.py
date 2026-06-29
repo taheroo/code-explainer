@@ -17,10 +17,10 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 log = logging.getLogger(__name__)
 
-from ingest import ingest_all, ingest_repo
-from llm import generate_answer
-from retriever import QueryRequest, retrieve
-from repo_manager import resolve_repos
+from .ingest import ingest_all, ingest_repo
+from .llm import generate_answer
+from .retriever import QueryRequest, retrieve
+from .repo_manager import resolve_repos
 
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600
@@ -28,6 +28,12 @@ CACHE_TTL = 3600
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Clean stale HuggingFace cache locks that block model loading
+    import shutil
+    import pathlib
+    hf_lock_dir = pathlib.Path.home() / ".cache/huggingface/hub/.locks"
+    if hf_lock_dir.exists():
+        shutil.rmtree(hf_lock_dir, ignore_errors=True)
     log.info("Starting up — ingestion runs on-demand via /ingest endpoint")
     yield
 

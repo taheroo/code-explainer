@@ -6,9 +6,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from embedder import embed_query
-from qdrant_wrapper import get_qdrant_client
-from sparse_embedder import embed_sparse
+from .embedder import embed_query
+from .qdrant_wrapper import get_qdrant_client
+from .sparse_embedder import embed_sparse
 
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
 CONFIDENCE_THRESHOLD = -1.5
@@ -155,7 +155,7 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
     client = get_qdrant_client()
     client.ensure_collection()
 
-    from llm import expand_query
+    from .llm import expand_query
     variants = expand_query(question)
 
     all_results: list[list[RetrievedChunk]] = []
