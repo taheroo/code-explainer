@@ -17,10 +17,10 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 log = logging.getLogger(__name__)
 
-from .ingest import ingest_all, ingest_repo
-from .llm import generate_answer
-from .retriever import QueryRequest, retrieve
-from .repo_manager import resolve_repos
+from ingest import ingest_all, ingest_repo
+from llm import generate_answer
+from retriever import QueryRequest, retrieve
+from repo_manager import resolve_repos
 
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600

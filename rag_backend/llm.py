@@ -10,7 +10,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-from .retriever import RetrievedChunk
+from retriever import RetrievedChunk
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
