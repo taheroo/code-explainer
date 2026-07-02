@@ -19,10 +19,16 @@ def embed_texts(texts: Iterable[str]) -> list[list[float]]:
         return []
 
     model = get_embedder()
-    vectors = model.encode(items, normalize_embeddings=True, show_progress_bar=False)
-    if hasattr(vectors, "tolist"):
-        return vectors.tolist()
-    return [vector.tolist() for vector in vectors]
+    batch_size = 32
+    all_embeddings: list[list[float]] = []
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i+batch_size]
+        vectors = model.encode(batch, normalize_embeddings=True, show_progress_bar=False)
+        if hasattr(vectors, "tolist"):
+            all_embeddings.extend(vectors.tolist())
+        else:
+            all_embeddings.extend(vector.tolist() for vector in vectors)
+    return all_embeddings
 
 
 def embed_query(text: str) -> list[float]:

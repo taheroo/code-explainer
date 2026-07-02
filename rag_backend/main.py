@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -25,7 +26,23 @@ from repo_manager import clone_single_repo, resolve_repos
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600
 
-ingestion_status: dict[str, str] = {}
+STATUS_FILE = Path(__file__).resolve().parent.parent / "cloned_repos" / "ingestion_status.json"
+
+
+def get_status(repo_name: str) -> str:
+    if STATUS_FILE.exists():
+        data = json.loads(STATUS_FILE.read_text())
+        return data.get(repo_name, "unknown")
+    return "unknown"
+
+
+def set_status(repo_name: str, status: str) -> None:
+    data = {}
+    if STATUS_FILE.exists():
+        data = json.loads(STATUS_FILE.read_text())
+    data[repo_name] = status
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATUS_FILE.write_text(json.dumps(data))
 
 
 @asynccontextmanager
@@ -165,7 +182,7 @@ def health() -> dict[str, str]:
 def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
     if request.repo_url:
         repo_name = request.repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-        ingestion_status[repo_name] = "indexing"
+        set_status(repo_name, "indexing")
         background_tasks.add_task(_run_ingestion, request, repo_name)
         return {"status": "indexing", "repo": repo_name}
 
@@ -177,16 +194,16 @@ def _run_ingestion(request: IngestRequest, repo_name: str):
     try:
         name, path = clone_single_repo(request.repo_url, request.github_token)
         total = ingest_repo(name, path, dry_run=request.dry_run)
-        ingestion_status[repo_name] = "ready"
+        set_status(repo_name, "ready")
         log.info("Background ingestion complete for %s — %d chunks indexed", repo_name, total)
     except Exception as e:
-        ingestion_status[repo_name] = f"error: {e}"
+        set_status(repo_name, f"error: {e}")
         log.error("Background ingestion failed for %s: %s", repo_name, e)
 
 
 @app.get("/ingest/status/{repo_name}")
 def get_ingest_status(repo_name: str):
-    return {"status": ingestion_status.get(repo_name, "unknown")}
+    return {"status": get_status(repo_name)}
 
 
 GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "thanks", "thank you"}
