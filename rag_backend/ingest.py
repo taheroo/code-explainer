@@ -189,11 +189,15 @@ def ingest_repo(repo_name: str, repo_path: Path, dry_run: bool = False) -> int:
 
     client.delete_repo(repo_name)
 
+    log.info("Embedding %d chunks from %s...", len(chunks), repo_name)
     points = build_points(chunks)
+    log.info("Built %d points — upserting to Qdrant...", len(points))
 
     batch_size = 64
     for i in range(0, len(points), batch_size):
         client.upsert_points(points[i:i + batch_size])
+        if (i // batch_size) % 5 == 0:
+            log.info("Upserted %d/%d points", min(i + batch_size, len(points)), len(points))
 
     log.info("✅ Indexed %d chunks from %s", len(chunks), repo_name)
     return len(chunks)
