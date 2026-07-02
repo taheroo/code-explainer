@@ -24,6 +24,22 @@ def _git_clone(url: str, dest: Path, token: Optional[str] = None) -> None:
     subprocess.run(["git", "clone", "--depth=1", url, str(dest)], check=True)
 
 
+def clone_single_repo(url: str, token: Optional[str] = None) -> tuple[str, Path]:
+    name = Path(url.rstrip("/").rstrip(".git")).name
+    dest = CLONE_DIR / name
+    _git_clone(url, dest, token)
+    repos = []
+    for child in sorted(dest.iterdir()):
+        if child.is_dir() and child.name not in SKIP_DIRS:
+            repos.append((child.name, child))
+    root_files = [f for f in dest.iterdir() if f.is_file()]
+    if root_files:
+        repos.insert(0, ("_root", dest))
+    if not repos:
+        repos.append((name, dest))
+    return (name, dest)
+
+
 def resolve_repos() -> list[tuple[str, Path]]:
     mode = os.getenv("REPO_MODE", "monorepo")
     token = os.getenv("GITHUB_TOKEN") or None

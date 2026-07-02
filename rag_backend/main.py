@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 from ingest import ingest_all, ingest_repo
 from llm import generate_answer
 from retriever import QueryRequest, retrieve
-from repo_manager import resolve_repos
+from repo_manager import clone_single_repo, resolve_repos
 
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600
@@ -52,6 +52,8 @@ app.add_middleware(
 
 class IngestRequest(BaseModel):
     repo: Optional[str] = None
+    repo_url: Optional[str] = None
+    github_token: Optional[str] = None
     dry_run: bool = False
 
 
@@ -160,7 +162,11 @@ def health() -> dict[str, str]:
 @app.post("/ingest")
 def ingest(request: IngestRequest) -> dict[str, int | str]:
     try:
-        total = ingest_all(target_repo=request.repo, dry_run=request.dry_run)
+        if request.repo_url:
+            repo_name, repo_path = clone_single_repo(request.repo_url, request.github_token)
+            total = ingest_repo(repo_name, repo_path, dry_run=request.dry_run)
+        else:
+            total = ingest_all(target_repo=request.repo, dry_run=request.dry_run)
         return {"status": "ok", "chunks_indexed": total}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
