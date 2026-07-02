@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -24,6 +24,8 @@ from repo_manager import clone_single_repo, resolve_repos
 
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600
+
+ingestion_status: dict[str, str] = {}
 
 
 @asynccontextmanager
@@ -160,16 +162,29 @@ def health() -> dict[str, str]:
 
 
 @app.post("/ingest")
-def ingest(request: IngestRequest) -> dict[str, int | str]:
+def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
+    if request.repo_url:
+        repo_name = request.repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+        ingestion_status[repo_name] = "indexing"
+        background_tasks.add_task(_run_ingestion, request, repo_name)
+        return {"status": "indexing", "repo": repo_name}
+
+    total = ingest_all(target_repo=request.repo, dry_run=request.dry_run)
+    return {"status": "ok", "chunks": total}
+
+
+def _run_ingestion(request: IngestRequest, repo_name: str):
     try:
-        if request.repo_url:
-            repo_name, repo_path = clone_single_repo(request.repo_url, request.github_token)
-            total = ingest_repo(repo_name, repo_path, dry_run=request.dry_run)
-        else:
-            total = ingest_all(target_repo=request.repo, dry_run=request.dry_run)
-        return {"status": "ok", "chunks_indexed": total}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        name, path = clone_single_repo(request.repo_url, request.github_token)
+        ingest_repo(name, path, dry_run=request.dry_run)
+        ingestion_status[repo_name] = "ready"
+    except Exception as e:
+        ingestion_status[repo_name] = f"error: {e}"
+
+
+@app.get("/ingest/status/{repo_name}")
+def get_ingest_status(repo_name: str):
+    return {"status": ingestion_status.get(repo_name, "unknown")}
 
 
 GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "thanks", "thank you"}
