@@ -16,6 +16,7 @@ from qdrant_client.http.models import (
     FieldCondition,
     Filter,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     SparseVector,
     SparseVectorParams,
@@ -91,20 +92,27 @@ class LocalQdrantClient:
 
     def ensure_collection(self) -> None:
         names = [c.name for c in self._client.get_collections().collections]
-        if self.settings.collection_name in names:
-            return
-        self._client.create_collection(
-            collection_name=self.settings.collection_name,
-            vectors_config={
-                "dense": VectorParams(
-                    size=self.settings.vector_size,
-                    distance=Distance.COSINE,
-                ),
-            },
-            sparse_vectors_config={
-                "sparse": SparseVectorParams(),
-            },
-        )
+        if self.settings.collection_name not in names:
+            self._client.create_collection(
+                collection_name=self.settings.collection_name,
+                vectors_config={
+                    "dense": VectorParams(
+                        size=self.settings.vector_size,
+                        distance=Distance.COSINE,
+                    ),
+                },
+                sparse_vectors_config={
+                    "sparse": SparseVectorParams(),
+                },
+            )
+        try:
+            self._client.create_payload_index(
+                collection_name=self.settings.collection_name,
+                field_name="repo_name",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        except Exception:
+            pass
 
     def upsert_points(self, points: list[dict[str, Any]]) -> None:
         if not points:
