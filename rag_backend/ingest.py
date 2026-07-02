@@ -155,7 +155,16 @@ def collect_chunks_from_repo(repo_name: str, repo_path: Path) -> list[ChunkRecor
 # ----------------------------
 
 def build_points(chunks: list[ChunkRecord]) -> list[dict[str, Any]]:
-    vectors = embed_texts(chunk.text for chunk in chunks)
+    log.info("Generating dense embeddings for %d chunks...", len(chunks))
+    vectors = []
+    batch_size = 32
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i+batch_size]
+        batch_vectors = embed_texts(chunk.text for chunk in batch)
+        vectors.extend(batch_vectors)
+        log.info("Encoded %d/%d chunks", min(i + batch_size, len(chunks)), len(chunks))
+
+    log.info("Generating sparse embeddings...")
     sparse_vectors = embed_sparse_batch(chunk.text for chunk in chunks)
 
     points = []
