@@ -47,6 +47,11 @@ def set_status(repo_name: str, status: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure all loggers propagate to stderr at INFO level
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if not root.handlers:
+        root.addHandler(logging.StreamHandler())
     # Clean stale HuggingFace cache locks that block model loading
     import shutil
     import pathlib
