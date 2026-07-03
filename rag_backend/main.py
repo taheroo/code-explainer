@@ -178,6 +178,15 @@ def root() -> str:
 </html>"""
 
 
+@app.post("/index")
+def index_repo(request: IngestRequest):
+    if not request.repo_url:
+        raise HTTPException(400, "repo_url required")
+    repo_name, repo_path = clone_single_repo(request.repo_url, request.github_token)
+    set_status(repo_name, "cloned")
+    return {"status": "cloned", "repo": repo_name}
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

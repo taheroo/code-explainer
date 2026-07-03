@@ -14,20 +14,16 @@ def get_embedder(model_name: str = MODEL_NAME) -> SentenceTransformer:
 
 
 def embed_texts(texts: Iterable[str]) -> list[list[float]]:
-    items = [f"passage: {text}" for text in texts]
+    items = list(texts)
     if not items:
         return []
 
     model = get_embedder()
-    batch_size = 32
-    all_embeddings: list[list[float]] = []
-    for i in range(0, len(items), batch_size):
-        batch = items[i:i+batch_size]
-        vectors = model.encode(batch, normalize_embeddings=True, show_progress_bar=False)
-        if hasattr(vectors, "tolist"):
-            all_embeddings.extend(vectors.tolist())
-        else:
-            all_embeddings.extend(vector.tolist() for vector in vectors)
+    all_embeddings = []
+    for i in range(0, len(items), 32):
+        batch = [f"passage: {t}" for t in items[i:i+32]]
+        embeddings = model.encode(batch, normalize_embeddings=True)
+        all_embeddings.extend(embeddings.tolist())
     return all_embeddings
 
 
