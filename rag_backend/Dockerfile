@@ -4,6 +4,9 @@ FROM python:3.11-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
+ENV HF_HOME=/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
+
 # 1. Torch first (torch cpu not for gpu for size constraints)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
@@ -11,8 +14,13 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. Download models third 
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5'); SentenceTransformer('cross-encoder/ms-marco-MiniLM-L6-v2')"
+# 3. Download models third (baked into image — no download at runtime)
+RUN python -c "
+from sentence_transformers import SentenceTransformer, CrossEncoder
+SentenceTransformer('BAAI/bge-small-en-v1.5')
+CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
+print('Models cached')
+"
 
 # 4. Copy your source code
 COPY . .
@@ -29,7 +37,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy python dependencies, huggingface caches, and codebase from the builder stage
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /root/.cache /root/.cache
 COPY --from=builder /app /app
 
 EXPOSE 8000
