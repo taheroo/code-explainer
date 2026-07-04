@@ -13,6 +13,25 @@ CLONE_DIR = Path(__file__).resolve().parent.parent / "cloned_repos"
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "eval", "rag_backend"}
 
 
+def sync_and_get_commit(repo_path: Path) -> str:
+    """Pull latest, then return current HEAD commit hash."""
+    subprocess.run(["git", "pull", "--ff-only"], cwd=repo_path, capture_output=True, text=True)
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_path, text=True).strip()
+
+
+def _sidecar_path(repo_name: str) -> Path:
+    return CLONE_DIR / f"{repo_name}.commit"
+
+
+def read_last_ingested_commit(repo_name: str) -> str | None:
+    p = _sidecar_path(repo_name)
+    return p.read_text().strip() if p.exists() else None
+
+
+def write_last_ingested_commit(repo_name: str, commit_hash: str):
+    _sidecar_path(repo_name).write_text(commit_hash)
+
+
 def _git_clone(url: str, dest: Path, token: Optional[str] = None) -> None:
     if dest.exists():
         log.info("Already exists, skipping clone: %s", dest)

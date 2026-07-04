@@ -23,7 +23,7 @@ from qdrant_wrapper import get_qdrant_client
 from ingest import ingest_all, ingest_repo
 from llm import stream_answer
 from retriever import QueryRequest, retrieve
-from repo_manager import clone_single_repo, resolve_repos
+from repo_manager import clone_single_repo, resolve_repos, sync_and_get_commit, read_last_ingested_commit, write_last_ingested_commit
 
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600
@@ -233,9 +233,17 @@ def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
 def _run_ingestion(request: IngestRequest, repo_name: str):
     try:
         name, path = clone_single_repo(request.repo_url, request.github_token)
-        total = ingest_all(dry_run=request.dry_run)
+        current_commit = sync_and_get_commit(path)
+
+        if current_commit == read_last_ingested_commit(name):
+            set_status(repo_name, "ready")
+            log.info("Skipping ingest for %s — no new commits", name)
+            return
+
+        total = ingest_repo(name, path, dry_run=request.dry_run)
+        write_last_ingested_commit(name, current_commit)
         set_status(repo_name, "ready")
-        log.info("Background ingestion complete — %d total chunks across all repos", total)
+        log.info("Background ingestion complete — %d chunks indexed for %s", total, name)
     except Exception as e:
         set_status(repo_name, f"error: {e}")
         log.error("Background ingestion failed for %s: %s", repo_name, e)
