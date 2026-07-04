@@ -58,6 +58,13 @@ async def lifespan(app: FastAPI):
     hf_lock_dir = pathlib.Path.home() / ".cache/huggingface/hub/.locks"
     if hf_lock_dir.exists():
         shutil.rmtree(hf_lock_dir, ignore_errors=True)
+    # Pre-warm models on startup so first query is fast
+    log.info("Pre-warming embedding model...")
+    from sentence_transformers import SentenceTransformer
+    SentenceTransformer('BAAI/bge-small-en-v1.5')
+    log.info("Pre-warming cross-encoder...")
+    from sentence_transformers import CrossEncoder
+    CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
     log.info("Starting up — ingestion runs on-demand via /ingest endpoint")
     yield
 
