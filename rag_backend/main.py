@@ -10,7 +10,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -19,7 +19,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 log = logging.getLogger(__name__)
 
 from ingest import ingest_all, ingest_repo
-from llm import generate_answer
+from llm import stream_answer
 from retriever import QueryRequest, retrieve
 from repo_manager import clone_single_repo, resolve_repos
 
@@ -158,15 +158,32 @@ def root() -> str:
       addMsg(q, true);
       input.value = '';
       typing.style.display = 'block';
+      let answer = '';
       try {
         const r = await fetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: q })
         });
-        const d = await r.json();
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              answer += data;
+            }
+          }
+        }
         typing.style.display = 'none';
-        addMsg(d.answer, false);
+        addMsg(answer, false);
       } catch(e) {
         typing.style.display = 'none';
         addMsg('Error: ' + e.message, false);
@@ -246,25 +263,31 @@ def get_ingest_status(repo_name: str):
 GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "thanks", "thank you"}
 
 @app.post("/query")
-def query(request: QueryRequest) -> QueryResult:
+def query(request: QueryRequest):
     q = request.question.lower().strip()
     if q in GREETINGS or len(q) < 3:
-        return QueryResult(answer="Hello! I'm your code assistant. Ask me anything about the codebase — what a component does, how a feature works, or where something is defined.")
+        return StreamingResponse(
+            iter([f"data: Hello! I'm your code assistant. Ask me anything about the codebase — what a component does, how a feature works, or where something is defined.\n\ndata: [DONE]\n\n"]),
+            media_type="text/event-stream",
+        )
 
     key = hashlib.md5(q.encode()).hexdigest()
     if key in cache and time.time() - cache[key]["ts"] < CACHE_TTL:
-        return cache[key]["response"]
+        cached = cache[key]["response"]
+        return StreamingResponse(
+            iter([f"data: {cached.answer}\n\ndata: [DONE]\n\n"]),
+            media_type="text/event-stream",
+        )
 
     try:
         t0 = time.time()
         chunks = retrieve(request.question, target_repo=request.target_repo, top_k=request.top_k)
         print(f"retrieve: {time.time()-t0:.2f}s")
-        t0 = time.time()
-        answer = generate_answer(request.question, chunks)
-        print(f"llm: {time.time()-t0:.2f}s")
-        result = QueryResult(answer=answer)
-        cache[key] = {"response": result, "ts": time.time()}
-        return result
+
+        def generate():
+            yield from stream_answer(request.question, chunks)
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

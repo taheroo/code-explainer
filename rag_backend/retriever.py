@@ -10,7 +10,7 @@ from embedder import embed_query
 from qdrant_wrapper import get_qdrant_client
 from sparse_embedder import embed_sparse
 
-CONFIDENCE_THRESHOLD = -1.5
+
 
 
 class QueryRequest(BaseModel):
@@ -156,8 +156,5 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
     deduped = _deduplicate_exact(merged)
     _normalize_scores(deduped)
     print(f"dedup+norm: {time.time()-t0:.2f}s")
-
-    if deduped and deduped[0].confidence < CONFIDENCE_THRESHOLD:
-        return []
 
     return deduped[:top_k]

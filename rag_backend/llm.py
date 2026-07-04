@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import time
+from functools import lru_cache
+from typing import Generator
 
 import httpx
 from dotenv import load_dotenv
@@ -127,6 +129,7 @@ def _call_groq(api_key: str, model: str, prompt: str, system_prompt: str | None 
     return None
 
 
+@lru_cache(maxsize=32)
 def expand_query(question: str) -> list[str]:
     system_prompt = "You are a query expansion assistant. Output only the variant queries, one per line."
     prompt = (
@@ -211,6 +214,57 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
                         key, value = part.split("=", 1)
                         filters[key.strip()] = value.strip()
     return cleaned, filters
+
+
+def stream_answer(question: str, chunks: list[RetrievedChunk]) -> Generator[str, None, None]:
+    if not chunks:
+        yield "data: I could not find any relevant information in the codebase to answer your question. Please try rephrasing it or ask about a different topic.\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    context = format_context(chunks)
+    prompt = f"Context:\n{context}\n\nQuestion: {question}"
+
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not groq_key:
+        yield "data: LLM service not configured. Set GROQ_API_KEY.\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.0,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {groq_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            with client.stream("POST", GROQ_URL, json=payload, headers=headers) as resp:
+                for line in resp.iter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:].strip()
+                        if data == "[DONE]":
+                            break
+                        import json as _json
+                        try:
+                            event = _json.loads(data)
+                            token = event["choices"][0]["delta"].get("content", "")
+                            if token:
+                                yield f"data: {token}\n\n"
+                        except _json.JSONDecodeError:
+                            pass
+    except Exception as e:
+        yield f"data: Error: {e}\n\n"
+
+    yield "data: [DONE]\n\n"
 
 
 def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
