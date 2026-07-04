@@ -18,6 +18,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 log = logging.getLogger(__name__)
 
+from embedder import get_embedder
 from ingest import ingest_all, ingest_repo
 from llm import stream_answer
 from retriever import QueryRequest, retrieve
@@ -52,14 +53,8 @@ async def lifespan(app: FastAPI):
     root.setLevel(logging.INFO)
     if not root.handlers:
         root.addHandler(logging.StreamHandler())
-    log.info("Starting up — pre-warming models for fast first query...")
-    # Warm up embedder only (no cross-encoder - avoids OOM on 512MB)
-    try:
-        from embedder import _get_embedder
-        _get_embedder()
-        log.info("Embedder model warmed up")
-    except Exception as e:
-        log.warning(f"Model warm-up failed: {e}")
+    log.info("Starting up — pre-loading embedder...")
+    get_embedder()  # loads model into RAM during startup
     yield
 
 
@@ -202,6 +197,12 @@ def index_repo(request: IngestRequest):
         raise HTTPException(status_code=400, detail="repo_url required")
     repo_name, repo_path = clone_single_repo(request.repo_url, request.github_token)
     return {"status": "cloned", "repo": repo_name}
+
+
+@app.get("/warm")
+def warm():
+    get_embedder()
+    return {"status": "warm"}
 
 
 @app.get("/health")
