@@ -53,12 +53,11 @@ async def lifespan(app: FastAPI):
     if not root.handlers:
         root.addHandler(logging.StreamHandler())
     log.info("Starting up — pre-warming models for fast first query...")
-    # Warm up models in background
+    # Warm up embedder only (no cross-encoder - avoids OOM on 512MB)
     try:
-        from retriever import _get_embedder, _get_cross_encoder
+        from embedder import _get_embedder
         _get_embedder()
-        _get_cross_encoder()
-        log.info("Models warmed up")
+        log.info("Embedder model warmed up")
     except Exception as e:
         log.warning(f"Model warm-up failed: {e}")
     yield

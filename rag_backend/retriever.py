@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
@@ -11,7 +10,6 @@ from embedder import embed_query
 from qdrant_wrapper import get_qdrant_client
 from sparse_embedder import embed_sparse
 
-CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
 CONFIDENCE_THRESHOLD = -1.5
 
 
@@ -52,23 +50,7 @@ class RetrievedChunk(BaseModel):
         }
 
 
-@lru_cache(maxsize=1)
-def _get_cross_encoder():
-    from sentence_transformers import CrossEncoder
-    return CrossEncoder(CROSS_ENCODER_MODEL)
 
-
-def _rerank(question: str, chunks: list[RetrievedChunk], top_k: int = 5) -> list[RetrievedChunk]:
-    if not chunks:
-        return chunks
-    pairs = [(question, c.text) for c in chunks]
-    scores = _get_cross_encoder().predict(pairs, show_progress_bar=False)
-    if hasattr(scores, "tolist"):
-        scores = scores.tolist()
-    ranked = sorted(zip(chunks, scores), key=lambda x: x[1], reverse=True)
-    for c, s in ranked:
-        c.score = float(s)
-    return [c for c, _ in ranked[:top_k]]
 
 
 def _normalize_scores(chunks: list[RetrievedChunk]) -> None:
@@ -171,11 +153,7 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
 
     t0 = time.time()
     merged = _rrf_merge(all_results)
-    reranked = _rerank(question, merged, top_k)
-    print(f"rerank: {time.time()-t0:.2f}s")
-
-    t0 = time.time()
-    deduped = _deduplicate_exact(reranked)
+    deduped = _deduplicate_exact(merged)
     _normalize_scores(deduped)
     print(f"dedup+norm: {time.time()-t0:.2f}s")
 
