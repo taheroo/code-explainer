@@ -52,7 +52,15 @@ async def lifespan(app: FastAPI):
     root.setLevel(logging.INFO)
     if not root.handlers:
         root.addHandler(logging.StreamHandler())
-    log.info("Starting up — models baked into image, ingestion runs on-demand via /ingest endpoint")
+    log.info("Starting up — pre-warming models for fast first query...")
+    # Warm up models in background
+    try:
+        from retriever import _get_embedder, _get_cross_encoder
+        _get_embedder()
+        _get_cross_encoder()
+        log.info("Models warmed up")
+    except Exception as e:
+        log.warning(f"Model warm-up failed: {e}")
     yield
 
 
