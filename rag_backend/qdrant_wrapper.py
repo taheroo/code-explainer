@@ -90,6 +90,14 @@ class LocalQdrantClient:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
+    def reset_collection(self) -> None:
+        try:
+            self._client.delete_collection(collection_name=self.settings.collection_name)
+            log.info("Deleted collection '%s'", self.settings.collection_name)
+        except Exception as e:
+            log.warning("Could not delete collection '%s': %s", self.settings.collection_name, e)
+        self.ensure_collection()
+
     def ensure_collection(self) -> None:
         names = [c.name for c in self._client.get_collections().collections]
         if self.settings.collection_name not in names:

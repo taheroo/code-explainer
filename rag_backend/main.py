@@ -19,6 +19,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 log = logging.getLogger(__name__)
 
 from embedder import get_embedder
+from qdrant_wrapper import get_qdrant_client
 from ingest import ingest_all, ingest_repo
 from llm import stream_answer
 from retriever import QueryRequest, retrieve
@@ -208,6 +209,13 @@ def warm():
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/reset")
+def reset_collection():
+    client = get_qdrant_client()
+    client.reset_collection()
+    return {"status": "reset", "collection": client.settings.collection_name}
 
 
 @app.post("/ingest")
