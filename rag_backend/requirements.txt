@@ -4,5 +4,6 @@ httpx
 python-dotenv
 pydantic
 sentence-transformers
+# cross-encoder for reranking
 qdrant-client
 
