@@ -107,34 +107,31 @@ curl -X POST http://localhost:8000/query \
 
 ## Deployment
 
-The app is deployed on **Railway** with **Qdrant Cloud** for vector storage.
+The app is deployed on **Render** with **Qdrant Cloud** for vector storage.
 
 ### Live instance
 
-- **URL:** https://rendoohelp-production.up.railway.app
+- **URL:** https://code-explainer-c8g2.onrender.com
 - **Qdrant:** Managed cloud instance for persistent vector data
 
 ### Architecture
 
 | Component | Service |
 |---|---|
-| **App server** | Railway — FastAPI (uvicorn) inside Docker |
+| **App server** | Render — FastAPI (uvicorn) inside Docker |
 | **Vector DB** | Qdrant Cloud — dense + sparse hybrid search |
-| **LLM** | OpenRouter / Groq (Gemini, LLaMA, Gemma) |
-| **Embeddings** | Sentence Transformers (BGE-small) loaded at runtime |
+| **LLM** | Groq |
+| **Embeddings** | Sentence Transformers (BGE-small) baked into Docker image |
 
-### Environment variables (Railway dashboard)
+### Environment variables (Render dashboard)
 
 ```env
 QDRANT_URL=https://your-qdrant-cloud-instance.cloud.qdrant.io
 QDRANT_API_KEY=qdrant-...
-OPENROUTER_API_KEY=sk-or-...
 GROQ_API_KEY=gsk-...
-REPO_MODE=monorepo
-MONOREPO_URL=https://github.com/your-org/your-repo
 ```
 
-The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local development (with a local Qdrant container). On Railway, Qdrant Cloud replaces the local container.
+The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local development (with a local Qdrant container). On Render, Qdrant Cloud replaces the local container.
 
 ## Architecture
 
@@ -143,10 +140,9 @@ flowchart LR
     User["👤 User"] -->|"POST /query"| API["FastAPI<br/>(Railway)"]
     API -->|"embed query"| Embedder["BGE-small<br/>Embedder"]
     API -->|"sparse embed"| Sparse["Token<br/>Sparse Embedder"]
-    Embedder -->|"dense vector"| Qdrant["Qdrant Cloud<br/>Hybrid Search"]
-    Sparse -->|"sparse vector"| Qdrant
-    Qdrant -->|"top chunks"| Reranker["Cross-Encoder<br/>Reranker"]
-    Reranker -->|"reranked chunks"| LLM["Groq / OpenRouter<br/>LLM"]
+Embedder -->|"dense vector"| Qdrant["Qdrant Cloud<br/>Hybrid Search"]
+Sparse -->|"sparse vector"| Qdrant
+Qdrant -->|"top chunks"| LLM["Groq<br/>LLM"]
     LLM -->|"answer"| API
     API -->|"answer"| User
 
@@ -164,8 +160,8 @@ flowchart LR
 | Step | What happens |
 |---|---|
 | **Ingest** | Scans repos, chunks code by function/class (AST for Python, regex for JS/TS), embeds dense + sparse vectors, stores in Qdrant |
-| **Retrieve** | Hybrid dense/sparse search → cross-encoder reranking → top 5 chunks |
-| **Generate** | LLM (Groq/OpenRouter) summarizes chunks with strict grounding prompt |
+| **Retrieve** | Hybrid dense/sparse search → RRF merge → top chunks |
+| **Generate** | LLM (Groq) summarizes chunks with strict grounding prompt |
 
 ## Endpoints
 
