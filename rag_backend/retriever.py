@@ -156,10 +156,7 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
     client = get_qdrant_client()
     client.ensure_collection()
 
-    t0 = time.time()
-    from llm import expand_query
-    variants = expand_query(question)
-    print(f"expand_query: {time.time()-t0:.2f}s")
+    variants = [question]
 
     t0 = time.time()
     all_results: list[list[RetrievedChunk]] = []

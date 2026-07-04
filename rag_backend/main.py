@@ -52,20 +52,7 @@ async def lifespan(app: FastAPI):
     root.setLevel(logging.INFO)
     if not root.handlers:
         root.addHandler(logging.StreamHandler())
-    # Clean stale HuggingFace cache locks that block model loading
-    import shutil
-    import pathlib
-    hf_lock_dir = pathlib.Path.home() / ".cache/huggingface/hub/.locks"
-    if hf_lock_dir.exists():
-        shutil.rmtree(hf_lock_dir, ignore_errors=True)
-    # Pre-warm models on startup so first query is fast
-    log.info("Pre-warming embedding model...")
-    from sentence_transformers import SentenceTransformer
-    SentenceTransformer('BAAI/bge-small-en-v1.5')
-    log.info("Pre-warming cross-encoder...")
-    from sentence_transformers import CrossEncoder
-    CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
-    log.info("Starting up — ingestion runs on-demand via /ingest endpoint")
+    log.info("Starting up — models baked into image, ingestion runs on-demand via /ingest endpoint")
     yield
 
 
@@ -219,6 +206,29 @@ def _run_ingestion(request: IngestRequest, repo_name: str):
     except Exception as e:
         set_status(repo_name, f"error: {e}")
         log.error("Background ingestion failed for %s: %s", repo_name, e)
+
+
+def _run_ingestion_url(repo_url: str, github_token: str | None, repo_name: str):
+    """Shared helper: clone + ingest from URL (used by webhook and /ingest)."""
+    try:
+        name, path = clone_single_repo(repo_url, github_token)
+        total = ingest_repo(name, path)
+        set_status(repo_name, "ready")
+        log.info("Webhook ingestion complete for %s — %d chunks indexed", repo_name, total)
+    except Exception as e:
+        set_status(repo_name, f"error: {e}")
+        log.error("Webhook ingestion failed for %s: %s", repo_name, e)
+
+
+@app.post("/webhook/github")
+async def github_webhook(payload: dict, background_tasks: BackgroundTasks):
+    repo_url = payload.get("repository", {}).get("clone_url")
+    repo_name = payload.get("repository", {}).get("name")
+    if not repo_url or not repo_name:
+        return {"ok": False}
+    set_status(repo_name, "indexing")
+    background_tasks.add_task(_run_ingestion_url, repo_url, None, repo_name)
+    return {"ok": True}
 
 
 @app.get("/ingest/status/{repo_name}")

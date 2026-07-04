@@ -12,6 +12,13 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN python -c "
+from sentence_transformers import SentenceTransformer, CrossEncoder
+SentenceTransformer('BAAI/bge-small-en-v1.5')
+CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
+print('Models cached')
+"
+
 COPY . .
 
 EXPOSE 8000
