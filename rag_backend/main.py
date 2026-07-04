@@ -232,8 +232,12 @@ def query(request: QueryRequest) -> QueryResult:
         return cache[key]["response"]
 
     try:
+        t0 = time.time()
         chunks = retrieve(request.question, target_repo=request.target_repo, top_k=request.top_k)
+        print(f"retrieve: {time.time()-t0:.2f}s")
+        t0 = time.time()
         answer = generate_answer(request.question, chunks)
+        print(f"llm: {time.time()-t0:.2f}s")
         result = QueryResult(answer=answer)
         cache[key] = {"response": result, "ts": time.time()}
         return result

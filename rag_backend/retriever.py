@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -155,25 +156,32 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> l
     client = get_qdrant_client()
     client.ensure_collection()
 
+    t0 = time.time()
     from llm import expand_query
     variants = expand_query(question)
+    print(f"expand_query: {time.time()-t0:.2f}s")
 
+    t0 = time.time()
     all_results: list[list[RetrievedChunk]] = []
     for q in variants:
         results = _search_variant(q, client, top_k, target_repo, None)
         if results:
             all_results.append(results)
+    print(f"search ({len(variants)} variants): {time.time()-t0:.2f}s")
 
     if not all_results:
         return []
 
+    t0 = time.time()
     merged = _rrf_merge(all_results)
-
     reranked = _rerank(question, merged, top_k)
+    print(f"rerank: {time.time()-t0:.2f}s")
 
+    t0 = time.time()
     deduped = _deduplicate_exact(reranked)
-
     _normalize_scores(deduped)
+    print(f"dedup+norm: {time.time()-t0:.2f}s")
+
     if deduped and deduped[0].confidence < CONFIDENCE_THRESHOLD:
         return []
 
