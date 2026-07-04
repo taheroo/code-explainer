@@ -56,9 +56,11 @@ def resolve_repos() -> list[tuple[str, Path]]:
         return repos
 
     monorepo_url = os.getenv("MONOREPO_URL", "")
-    if not monorepo_url:
-        raise ValueError("MONOREPO_URL is required when REPO_MODE=monorepo")
-    _git_clone(monorepo_url, CLONE_DIR, token)
+    if monorepo_url:
+        _git_clone(monorepo_url, CLONE_DIR, token)
+
+    if not CLONE_DIR.exists():
+        return []
 
     repos = []
     for child in sorted(CLONE_DIR.iterdir()):

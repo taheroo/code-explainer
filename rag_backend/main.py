@@ -233,9 +233,9 @@ def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
 def _run_ingestion(request: IngestRequest, repo_name: str):
     try:
         name, path = clone_single_repo(request.repo_url, request.github_token)
-        total = ingest_repo(name, path, dry_run=request.dry_run)
+        total = ingest_all(dry_run=request.dry_run)
         set_status(repo_name, "ready")
-        log.info("Background ingestion complete for %s — %d chunks indexed", repo_name, total)
+        log.info("Background ingestion complete — %d total chunks across all repos", total)
     except Exception as e:
         set_status(repo_name, f"error: {e}")
         log.error("Background ingestion failed for %s: %s", repo_name, e)
