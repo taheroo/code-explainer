@@ -19,17 +19,49 @@ def sync_and_get_commit(repo_path: Path) -> str:
     return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_path, text=True).strip()
 
 
-def _sidecar_path(repo_name: str) -> Path:
-    return CLONE_DIR / f"{repo_name}.commit"
-
-
 def read_last_ingested_commit(repo_name: str) -> str | None:
-    p = _sidecar_path(repo_name)
-    return p.read_text().strip() if p.exists() else None
+    from qdrant_wrapper import get_qdrant_client
+    from qdrant_client.http.models import FieldCondition, MatchValue, Filter
+    client = get_qdrant_client()
+    try:
+        result = client._client.scroll(
+            collection_name=client.settings.collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(key="repo_name", match=MatchValue(value=repo_name)),
+                    FieldCondition(key="_meta", match=MatchValue(value="commit_hash")),
+                ]
+            ),
+            limit=1,
+            with_payload=True,
+        )
+        points = result[0]
+        if points:
+            return points[0].payload.get("value")
+    except Exception:
+        pass
+    return None
 
 
 def write_last_ingested_commit(repo_name: str, commit_hash: str):
-    _sidecar_path(repo_name).write_text(commit_hash)
+    import uuid
+    from qdrant_wrapper import get_qdrant_client
+    from qdrant_client.http.models import PointStruct
+    client = get_qdrant_client()
+    client._client.upsert(
+        collection_name=client.settings.collection_name,
+        points=[
+            PointStruct(
+                id=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{repo_name}_commit")),
+                vector={"dense": [0.0] * client.settings.vector_size},
+                payload={
+                    "repo_name": repo_name,
+                    "_meta": "commit_hash",
+                    "value": commit_hash,
+                },
+            )
+        ],
+    )
 
 
 def _git_clone(url: str, dest: Path, token: Optional[str] = None) -> None:
