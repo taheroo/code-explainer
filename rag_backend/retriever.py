@@ -16,7 +16,7 @@ from sparse_embedder import embed_sparse
 class QueryRequest(BaseModel):
     question: str
     target_repo: Optional[str] = None
-    top_k: int = 2
+    top_k: int = 15
     session_id: Optional[str] = None
 
 
@@ -134,11 +134,12 @@ def _rrf_merge(
     return [entry["chunk"] for entry in scored]
 
 
-def retrieve(question: str, target_repo: str | None = None, top_k: int = 5) -> list[RetrievedChunk]:
+def retrieve(question: str, target_repo: str | None = None, top_k: int = 15) -> list[RetrievedChunk]:
     client = get_qdrant_client()
     client.ensure_collection()
 
-    variants = [question]
+    from llm import expand_query
+    variants = expand_query(question)
 
     t0 = time.time()
     all_results: list[list[RetrievedChunk]] = []
