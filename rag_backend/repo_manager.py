@@ -76,7 +76,7 @@ def _git_clone(url: str, dest: Path, token: Optional[str] = None) -> None:
 
 
 def clone_single_repo(url: str, token: Optional[str] = None) -> tuple[str, Path]:
-    name = Path(url.rstrip("/").rstrip(".git")).name
+    name = url.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1]
     dest = CLONE_DIR / name
     _git_clone(url, dest, token)
     repos = []

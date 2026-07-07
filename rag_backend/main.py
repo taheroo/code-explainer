@@ -221,7 +221,7 @@ def reset_collection():
 @app.post("/ingest")
 def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
     if request.repo_url:
-        repo_name = request.repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+        repo_name = request.repo_url.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1]
         set_status(repo_name, "indexing")
         background_tasks.add_task(_run_ingestion, request, repo_name)
         return {"status": "indexing", "repo": repo_name}
