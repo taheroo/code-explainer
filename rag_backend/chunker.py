@@ -8,16 +8,26 @@ from typing import Any
 MIN_CHUNK_CHARS = 40
 
 
+SUMMARY_CHARS = 300
+
+
+def _make_summary_chunk(source_code: str) -> dict[str, Any]:
+    text = source_code.strip()[:SUMMARY_CHARS]
+    return {
+        "text": text,
+        "start": 1,
+        "end": len(source_code.splitlines()),
+        "symbol": "summary",
+    }
+
+
 def chunk_code(file_path: str, source_code: str) -> list[dict[str, Any]]:
     suffix = Path(file_path).suffix.lower()
 
     if "readme" in Path(file_path).stem.lower():
-        return [{
-            "text": source_code.strip(),
-            "start": 1,
-            "end": len(source_code.splitlines()),
-            "symbol": "readme",
-        }]
+        raw = _fallback_line_chunks(source_code)
+        raw.insert(0, _make_summary_chunk(source_code))
+        return raw
 
     if suffix == ".py":
         chunks = _chunk_python(source_code)
