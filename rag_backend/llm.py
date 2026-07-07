@@ -131,6 +131,7 @@ def _call_groq(api_key: str, model: str, prompt: str, system_prompt: str | None 
 
 @lru_cache(maxsize=32)
 def expand_query(question: str) -> list[str]:
+    import concurrent.futures
     system_prompt = "You are a query expansion assistant. Output only the variant queries, one per line."
     prompt = (
         f"Generate 4 alternative search queries for a code search engine "
@@ -140,21 +141,31 @@ def expand_query(question: str) -> list[str]:
         f"Original: {question}"
     )
 
-    groq_key = os.getenv("GROQ_API_KEY")
-    result = None
-    if groq_key:
-        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        result = _call_groq(groq_key, model, prompt, system_prompt=system_prompt)
-    if not result:
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        if gemini_key:
-            model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
-            result = _call_gemini(gemini_key, model, prompt, system_prompt=system_prompt)
-    if not result:
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if api_key:
-            model = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
-            result = _call_openrouter(api_key, model, prompt, system_prompt=system_prompt)
+    def _try_expand():
+        groq_key = os.getenv("GROQ_API_KEY")
+        result = None
+        if groq_key:
+            model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+            result = _call_groq(groq_key, model, prompt, system_prompt=system_prompt)
+        if not result:
+            gemini_key = os.getenv("GEMINI_API_KEY")
+            if gemini_key:
+                model = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+                result = _call_gemini(gemini_key, model, prompt, system_prompt=system_prompt)
+        if not result:
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if api_key:
+                model = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
+                result = _call_openrouter(api_key, model, prompt, system_prompt=system_prompt)
+        return result
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_try_expand)
+        try:
+            result = future.result(timeout=5)
+        except concurrent.futures.TimeoutError:
+            log.warning("expand_query timed out after 5s — falling back to [question]")
+            result = None
 
     if result:
         lines = [line.strip() for line in result.strip().split("\n") if line.strip()]

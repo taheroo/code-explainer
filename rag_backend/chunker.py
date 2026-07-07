@@ -10,6 +10,15 @@ MIN_CHUNK_CHARS = 40
 
 def chunk_code(file_path: str, source_code: str) -> list[dict[str, Any]]:
     suffix = Path(file_path).suffix.lower()
+
+    if "readme" in Path(file_path).stem.lower():
+        return [{
+            "text": source_code.strip(),
+            "start": 1,
+            "end": len(source_code.splitlines()),
+            "symbol": "readme",
+        }]
+
     if suffix == ".py":
         chunks = _chunk_python(source_code)
     elif suffix in {".js", ".jsx", ".ts", ".tsx"}:
