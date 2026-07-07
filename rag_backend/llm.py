@@ -227,7 +227,10 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
     return cleaned, filters
 
 
-def stream_answer(question: str, chunks: list[RetrievedChunk]) -> Generator[str, None, None]:
+MAX_HISTORY_TURNS = 5
+
+
+def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None) -> Generator[str, None, None]:
     if not chunks:
         yield "data: I could not find any relevant information in the codebase to answer your question. Please try rephrasing it or ask about a different topic.\n\n"
         yield "data: [DONE]\n\n"
@@ -243,12 +246,15 @@ def stream_answer(question: str, chunks: list[RetrievedChunk]) -> Generator[str,
         return
 
     model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if history:
+        messages.extend(history[-MAX_HISTORY_TURNS * 2:])
+    messages.append({"role": "user", "content": prompt})
+
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": messages,
         "temperature": 0.0,
         "stream": True,
     }

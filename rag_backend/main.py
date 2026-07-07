@@ -288,11 +288,12 @@ def query(request: QueryRequest):
             media_type="text/event-stream",
         )
 
-    key = hashlib.md5(q.encode()).hexdigest()
-    if key in cache and time.time() - cache[key]["ts"] < CACHE_TTL:
-        cached = cache[key]["response"]
+    session_id = request.session_id or "default"
+    cache_key = f"{session_id}::{hashlib.md5(q.encode()).hexdigest()}"
+    if cache_key in cache and time.time() - cache[cache_key]["ts"] < CACHE_TTL:
+        cached_answer = cache[cache_key]["answer"]
         return StreamingResponse(
-            iter([f"data: {cached.answer}\n\ndata: [DONE]\n\n"]),
+            iter([f"data: {cached_answer}\n\ndata: [DONE]\n\n"]),
             media_type="text/event-stream",
         )
 
@@ -301,8 +302,20 @@ def query(request: QueryRequest):
         chunks = retrieve(request.question, target_repo=request.target_repo, top_k=request.top_k)
         print(f"retrieve: {time.time()-t0:.2f}s")
 
+        history = session_history.setdefault(session_id, [])
+
         def generate():
-            yield from stream_answer(request.question, chunks)
+            full_answer = ""
+            for token in stream_answer(request.question, chunks, history=history):
+                if token.startswith("data: "):
+                    content = token[6:]
+                    if content != "[DONE]\n\n":
+                        full_answer += content
+                yield token
+
+            history.append({"role": "user", "content": request.question})
+            history.append({"role": "assistant", "content": full_answer.strip()})
+            cache[cache_key] = {"answer": full_answer.strip(), "ts": time.time()}
 
         return StreamingResponse(generate(), media_type="text/event-stream")
     except Exception as exc:
