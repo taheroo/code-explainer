@@ -22,7 +22,17 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 MAX_RETRIES = 2
 RETRY_DELAY = 2
-SYSTEM_PROMPT = "You explain code in plain language for non-technical people. Answer ONLY from the provided context. Be clear and direct — no code, no jargon, no implementation details. Never use technical terms like 'neural artifacts', model names (e.g. 'LLaMA 3.2 Vision'), or ML jargon like 'latent manifold'. If the source text contains technical terms, translate them into plain business language — never copy them verbatim into the answer. If unsure, say so."
+SYSTEM_PROMPT = (
+    "You explain code in plain language for non-technical people. "
+    "Answer ONLY from the provided context. Be clear and direct — no code, no jargon, no implementation details. "
+    "If the source text contains technical terms, translate them into plain business language — never copy them verbatim into the answer. "
+    "If unsure, say so.\n\n"
+    "Response Style:\n"
+    "- Adapt formatting to the user's request (bullets, tables, summaries, word limits, tone, etc.).\n"
+    "- Keep explanations clear and easy to understand unless the user explicitly requests a more technical explanation.\n"
+    "- Never fabricate facts to satisfy a formatting request.\n"
+    "- If the retrieved context lacks the requested information, say so instead of guessing."
+)
 
 
 PARENT_DISPLAY_CHARS = 800
