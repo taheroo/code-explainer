@@ -154,7 +154,22 @@ def root() -> str:
       addMsg(q, true);
       input.value = '';
       typing.style.display = 'block';
-      let answer = '';
+      const answerEl = document.createElement('div');
+      answerEl.className = 'answer';
+      const botMsg = document.createElement('div');
+      botMsg.className = 'msg bot';
+      botMsg.appendChild(answerEl);
+      chat.appendChild(botMsg);
+      let pending = '';
+      let scheduled = false;
+      function flush() {
+        if (pending) {
+          answerEl.innerHTML += mdToHTML(escapeHTML(pending));
+          pending = '';
+          chat.scrollTop = chat.scrollHeight;
+        }
+        scheduled = false;
+      }
       try {
         const r = await fetch('/query', {
           method: 'POST',
@@ -174,12 +189,13 @@ def root() -> str:
             if (line.startsWith('data: ')) {
               const data = line.slice(6);
               if (data === '[DONE]') continue;
-              answer += data;
+              pending += data;
+              if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
             }
           }
         }
+        flush();
         typing.style.display = 'none';
-        addMsg(answer, false);
       } catch(e) {
         typing.style.display = 'none';
         addMsg('Error: ' + e.message, false);
