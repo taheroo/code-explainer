@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import os
 import time
@@ -283,7 +284,7 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
             with client.stream("POST", GROQ_URL, json=payload, headers=headers) as resp:
                 for line in resp.iter_lines():
                     if line.startswith("data: "):
@@ -318,7 +319,13 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        result = _call_groq(groq_key, model, prompt)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_call_groq, groq_key, model, prompt)
+            try:
+                result = future.result(timeout=12)
+            except concurrent.futures.TimeoutError:
+                log.warning("Groq generate_answer timed out after 12s")
+                result = None
         if result:
             return result
 

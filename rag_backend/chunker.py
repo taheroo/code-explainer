@@ -9,6 +9,7 @@ MIN_CHUNK_CHARS = 40
 
 
 SUMMARY_CHARS = 300
+README_MAX_CHARS = 1600  # ~400 tokens at ~4 chars/token
 
 
 def _make_summary_chunk(source_code: str) -> dict[str, Any]:
@@ -21,10 +22,22 @@ def _make_summary_chunk(source_code: str) -> dict[str, Any]:
     }
 
 
+def _make_whole_chunk(source_code: str) -> dict[str, Any]:
+    lines = source_code.splitlines()
+    return {
+        "text": source_code.strip(),
+        "start": 1,
+        "end": len(lines),
+        "symbol": "readme",
+    }
+
+
 def chunk_code(file_path: str, source_code: str) -> list[dict[str, Any]]:
     suffix = Path(file_path).suffix.lower()
 
     if "readme" in Path(file_path).stem.lower():
+        if len(source_code) <= README_MAX_CHARS:
+            return [_make_whole_chunk(source_code)]
         raw = _fallback_line_chunks(source_code)
         raw.insert(0, _make_summary_chunk(source_code))
         return raw
