@@ -142,11 +142,14 @@ def retrieve(question: str, target_repo: str | None = None, top_k: int = 15) -> 
     variants = expand_query(question)
 
     t0 = time.time()
+    import concurrent.futures
     all_results: list[list[RetrievedChunk]] = []
-    for q in variants:
-        results = _search_variant(q, client, top_k, target_repo, None)
-        if results:
-            all_results.append(results)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(variants), 5)) as pool:
+        futures = {pool.submit(_search_variant, q, client, top_k, target_repo, None): q for q in variants}
+        for future in concurrent.futures.as_completed(futures):
+            results = future.result()
+            if results:
+                all_results.append(results)
     print(f"search ({len(variants)} variants): {time.time()-t0:.2f}s")
 
     if not all_results:

@@ -98,7 +98,11 @@ class LocalQdrantClient:
             log.warning("Could not delete collection '%s': %s", self.settings.collection_name, e)
         self.ensure_collection()
 
+    _collection_checked: bool = False
+
     def ensure_collection(self) -> None:
+        if self._collection_checked:
+            return
         names = [c.name for c in self._client.get_collections().collections]
         if self.settings.collection_name not in names:
             self._client.create_collection(
@@ -121,6 +125,7 @@ class LocalQdrantClient:
             )
         except Exception:
             pass
+        self._collection_checked = True
 
     def upsert_points(self, points: list[dict[str, Any]]) -> None:
         if not points:
