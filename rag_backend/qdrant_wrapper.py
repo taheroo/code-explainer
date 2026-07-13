@@ -210,13 +210,14 @@ class LocalQdrantClient:
                     FieldCondition(key=key, match=MatchValue(value=value))
                 )
         qfilter = Filter(must=conditions) if conditions else None
-        dense_limit = limit * 4
+        fetch_limit = min(limit * 2, 30)
+
         dense_result = self._client.query_points(
             collection_name=self.settings.collection_name,
             query=vector,
             using="dense",
             query_filter=qfilter,
-            limit=dense_limit,
+            limit=fetch_limit,
             with_payload=True,
             with_vectors=False,
         )
@@ -228,7 +229,7 @@ class LocalQdrantClient:
                 query=SparseVector(indices=[i for i, _ in sparse_vector], values=[v for _, v in sparse_vector]),
                 using="sparse",
                 query_filter=qfilter,
-                limit=dense_limit,
+                limit=fetch_limit,
                 with_payload=True,
                 with_vectors=False,
             )

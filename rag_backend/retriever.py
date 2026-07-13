@@ -91,7 +91,7 @@ def _search_variant(
     hits = client.search(
         vector=vector,
         sparse_vector=sparse,
-        limit=top_k * 4,
+        limit=top_k,
         repo_name=target_repo,
         metadata_filter=metadata_filter,
     )
