@@ -71,13 +71,16 @@ def _count_tokens(text: str) -> int:
     return len(_get_encoder().encode(text))
 
 
-# Budget: Groq free-tier has ~6 KB payload limit ≈ ~5,500 tokens for code context.
-# Keep headroom for system prompt + question + history.
-TOKEN_BUDGET_FULL = 5500
-TOKEN_BUDGET_RETRY = 2500
+# Budget: Groq free-tier has ~6 KB payload limit.
+# tiktoken (cl100k_base) underestimates code tokens vs Llama 3 by ~10-15%,
+# so we apply a 15% safety margin on the budget to stay safely under limit.
+# Effective budget: ~4700 tokens for chunks + system overhead + question.
+TOKEN_BUDGET_FULL = 4700
+TOKEN_BUDGET_RETRY = 2200
 
-# Questions longer than this are already specific — skip expansion.
-EXPANSION_SKIP_THRESHOLD = 50  # tokens
+# Questions shorter than this are narrow/specific — skip expansion.
+# Longer questions are broad and benefit from multi-variant search.
+EXPANSION_SKIP_THRESHOLD = 20  # tokens
 
 
 def format_context(chunks: Iterable[RetrievedChunk]) -> str:
