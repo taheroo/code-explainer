@@ -5,4 +5,5 @@ python-dotenv
 pydantic
 sentence-transformers
 qdrant-client
+tiktoken
 

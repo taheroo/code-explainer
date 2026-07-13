@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json as _json
 import logging
 import os
 import time
 from functools import lru_cache
-from typing import Generator
+from typing import Generator, Iterable
 
 import httpx
 from dotenv import load_dotenv
@@ -49,6 +50,36 @@ SYSTEM_PROMPT = (
 PARENT_DISPLAY_CHARS = 800
 
 
+# ---------------------------------------------------------------------------
+# Token counting — uses tiktoken (cl100k_base ≈ GPT-4 / Llama 3 tokenizer)
+# Close enough for context sizing; no HuggingFace auth required.
+# ---------------------------------------------------------------------------
+import tiktoken as _tiktoken
+
+_enc: object | None = None
+
+
+def _get_encoder():
+    global _enc
+    if _enc is None:
+        _enc = _tiktoken.get_encoding("cl100k_base")
+    return _enc
+
+
+def _count_tokens(text: str) -> int:
+    """Return the token count for a string."""
+    return len(_get_encoder().encode(text))
+
+
+# Budget: Groq free-tier has ~6 KB payload limit ≈ ~5,500 tokens for code context.
+# Keep headroom for system prompt + question + history.
+TOKEN_BUDGET_FULL = 5500
+TOKEN_BUDGET_RETRY = 2500
+
+# Questions longer than this are already specific — skip expansion.
+EXPANSION_SKIP_THRESHOLD = 50  # tokens
+
+
 def format_context(chunks: Iterable[RetrievedChunk]) -> str:
     parts: list[str] = []
     for chunk in chunks:
@@ -58,6 +89,32 @@ def format_context(chunks: Iterable[RetrievedChunk]) -> str:
         ctx = f"--- {location} ---\n{chunk.text}"
         parts.append(ctx)
     return "\n\n".join(parts)
+
+
+def _trim_chunks_by_tokens(
+    chunks: list[RetrievedChunk],
+    token_budget: int,
+    question_tokens: int,
+) -> list[RetrievedChunk]:
+    """Greedily include chunks until the token budget is exhausted.
+
+    The budget accounts for system prompt overhead (~200 tokens) and the
+    question itself so the final payload stays within Groq's limits.
+    """
+    SYSTEM_OVERHEAD = 200
+    available = token_budget - SYSTEM_OVERHEAD - question_tokens
+    if available <= 0:
+        return chunks[:1]
+
+    trimmed: list[RetrievedChunk] = []
+    total_tokens = 0
+    for chunk in chunks:
+        chunk_tokens = _count_tokens(chunk.text)
+        if total_tokens + chunk_tokens > available and trimmed:
+            break
+        trimmed.append(chunk)
+        total_tokens += chunk_tokens
+    return trimmed
 
 
 def _summarize_fallback(chunks: list[RetrievedChunk]) -> str:
@@ -153,6 +210,12 @@ def _call_groq(api_key: str, model: str, prompt: str, system_prompt: str | None 
 @lru_cache(maxsize=32)
 def expand_query(question: str) -> list[str]:
     import concurrent.futures
+
+    q_tokens = _count_tokens(question)
+    if q_tokens >= EXPANSION_SKIP_THRESHOLD:
+        log.info("Question is %d tokens (>= %d) — skipping expansion, using original only", q_tokens, EXPANSION_SKIP_THRESHOLD)
+        return [question]
+
     system_prompt = "You are a query expansion assistant. Output only the variant queries, one per line."
     prompt = (
         f"Generate 4 alternative search queries for a code search engine "
@@ -251,22 +314,6 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
 MAX_HISTORY_TURNS = 5
 
 
-MAX_CONTEXT_CHARS = 6000
-
-
-def _trim_chunks(chunks: list[RetrievedChunk], max_chars: int) -> list[RetrievedChunk]:
-    """Keep adding chunks until we hit the char budget."""
-    trimmed: list[RetrievedChunk] = []
-    total = 0
-    for chunk in chunks:
-        chunk_len = len(chunk.text)
-        if total + chunk_len > max_chars and trimmed:
-            break
-        trimmed.append(chunk)
-        total += chunk_len
-    return trimmed
-
-
 def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None) -> Generator[str, None, None]:
     if not chunks:
         yield "data: I could not find any relevant information in the codebase to answer your question. Please try rephrasing it or ask about a different topic.\n\n"
@@ -280,9 +327,11 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
         return
 
     model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    question_tokens = _count_tokens(question)
 
-    for attempt, budget in enumerate([MAX_CONTEXT_CHARS, MAX_CONTEXT_CHARS // 2]):
-        trimmed = _trim_chunks(chunks, budget)
+    # Budgets to try: full token budget first, then a single hard retry.
+    for attempt, budget in enumerate([TOKEN_BUDGET_FULL, TOKEN_BUDGET_RETRY]):
+        trimmed = _trim_chunks_by_tokens(chunks, budget, question_tokens)
         context = format_context(trimmed)
         prompt = f"Context:\n{context}\n\nQuestion: {question}"
 
@@ -305,14 +354,19 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
             with httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
                 with client.stream("POST", GROQ_URL, json=payload, headers=headers) as resp:
                     if resp.status_code == 413:
-                        log.warning("413 Payload Too Large (budget=%d, attempt=%d) — retrying with trimmed chunks", budget, attempt + 1)
-                        continue
+                        if attempt == 0:
+                            log.warning("413 Payload Too Large (budget=%d tokens) — retrying with %d tokens", budget, TOKEN_BUDGET_RETRY)
+                            continue
+                        else:
+                            log.error("413 Payload Too Large on retry (budget=%d tokens) — giving up", budget)
+                            yield "data: The context is too large for the LLM to process. Try a shorter question or ask about a specific file.\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
                     for line in resp.iter_lines():
                         if line.startswith("data: "):
                             data = line[6:].strip()
                             if data == "[DONE]":
                                 break
-                            import json as _json
                             try:
                                 event = _json.loads(data)
                                 token = event["choices"][0]["delta"].get("content", "")
@@ -335,7 +389,9 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
             "or ask about a different topic."
         )
 
-    context = format_context(chunks)
+    question_tokens = _count_tokens(question)
+    trimmed = _trim_chunks_by_tokens(chunks, TOKEN_BUDGET_FULL, question_tokens)
+    context = format_context(trimmed)
     prompt = f"Context:\n{context}\n\nQuestion: {question}"
 
     groq_key = os.getenv("GROQ_API_KEY")
