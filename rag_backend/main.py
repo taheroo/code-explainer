@@ -290,7 +290,11 @@ async def github_webhook(payload: dict, background_tasks: BackgroundTasks):
 
 @app.get("/ingest/status/{repo_name}")
 def get_ingest_status(repo_name: str):
-    return {"status": get_status(repo_name)}
+    client = get_qdrant_client()
+    chunk_count = client.count_repo_chunks(repo_name)
+    if chunk_count > 0:
+        return {"status": "ready", "chunks": chunk_count}
+    return {"status": get_status(repo_name), "chunks": 0}
 
 
 GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "thanks", "thank you"}

@@ -169,6 +169,23 @@ class LocalQdrantClient:
         except Exception:
             log.warning("Failed to delete existing data for repo '%s' (index may not exist yet)", repo_name)
 
+    def count_repo_chunks(self, repo_name: str) -> int:
+        """Count how many chunks exist for a repo in Qdrant."""
+        try:
+            result = self._client.count(
+                collection_name=self.settings.collection_name,
+                count_filter=Filter(
+                    must=[
+                        FieldCondition(key="repo_name", match=MatchValue(value=repo_name))
+                    ]
+                ),
+                exact=True,
+            )
+            return result.count
+        except Exception:
+            log.warning("Failed to count chunks for repo '%s'", repo_name)
+            return 0
+
     def search(
         self,
         vector: list[float],
