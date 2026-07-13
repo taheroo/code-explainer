@@ -251,14 +251,27 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
 MAX_HISTORY_TURNS = 5
 
 
+MAX_CONTEXT_CHARS = 6000
+
+
+def _trim_chunks(chunks: list[RetrievedChunk], max_chars: int) -> list[RetrievedChunk]:
+    """Keep adding chunks until we hit the char budget."""
+    trimmed: list[RetrievedChunk] = []
+    total = 0
+    for chunk in chunks:
+        chunk_len = len(chunk.text)
+        if total + chunk_len > max_chars and trimmed:
+            break
+        trimmed.append(chunk)
+        total += chunk_len
+    return trimmed
+
+
 def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None) -> Generator[str, None, None]:
     if not chunks:
         yield "data: I could not find any relevant information in the codebase to answer your question. Please try rephrasing it or ask about a different topic.\n\n"
         yield "data: [DONE]\n\n"
         return
-
-    context = format_context(chunks)
-    prompt = f"Context:\n{context}\n\nQuestion: {question}"
 
     groq_key = os.getenv("GROQ_API_KEY")
     if not groq_key:
@@ -268,39 +281,48 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
 
     model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if history:
-        messages.extend(history[-MAX_HISTORY_TURNS * 2:])
-    messages.append({"role": "user", "content": prompt})
+    for attempt, budget in enumerate([MAX_CONTEXT_CHARS, MAX_CONTEXT_CHARS // 2]):
+        trimmed = _trim_chunks(chunks, budget)
+        context = format_context(trimmed)
+        prompt = f"Context:\n{context}\n\nQuestion: {question}"
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.0,
-        "stream": True,
-    }
-    headers = {
-        "Authorization": f"Bearer {groq_key}",
-        "Content-Type": "application/json",
-    }
-    try:
-        with httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
-            with client.stream("POST", GROQ_URL, json=payload, headers=headers) as resp:
-                for line in resp.iter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:].strip()
-                        if data == "[DONE]":
-                            break
-                        import json as _json
-                        try:
-                            event = _json.loads(data)
-                            token = event["choices"][0]["delta"].get("content", "")
-                            if token:
-                                yield f"data: {token}\n\n"
-                        except _json.JSONDecodeError:
-                            pass
-    except Exception as e:
-        yield f"data: Error: {e}\n\n"
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if history:
+            messages.extend(history[-MAX_HISTORY_TURNS * 2:])
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.0,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {groq_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            with httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
+                with client.stream("POST", GROQ_URL, json=payload, headers=headers) as resp:
+                    if resp.status_code == 413:
+                        log.warning("413 Payload Too Large (budget=%d, attempt=%d) — retrying with trimmed chunks", budget, attempt + 1)
+                        continue
+                    for line in resp.iter_lines():
+                        if line.startswith("data: "):
+                            data = line[6:].strip()
+                            if data == "[DONE]":
+                                break
+                            import json as _json
+                            try:
+                                event = _json.loads(data)
+                                token = event["choices"][0]["delta"].get("content", "")
+                                if token:
+                                    yield f"data: {token}\n\n"
+                            except _json.JSONDecodeError:
+                                pass
+        except Exception as e:
+            yield f"data: Error: {e}\n\n"
+            break
 
     yield "data: [DONE]\n\n"
 
