@@ -31,6 +31,16 @@ CACHE_TTL = 3600
 STATUS_FILE = Path(__file__).resolve().parent.parent / "cloned_repos" / "ingestion_status.json"
 
 
+def _repo_has_data(repo_name: str) -> bool:
+    """True when Qdrant already holds chunks for this repo."""
+    try:
+        client = get_qdrant_client()
+        return client.count_repo_chunks(repo_name) > 0
+    except Exception as e:
+        log.warning("Qdrant check failed for %s: %s", repo_name, e)
+        return False
+
+
 def get_status(repo_name: str) -> str:
     if STATUS_FILE.exists():
         data = json.loads(STATUS_FILE.read_text())
@@ -251,9 +261,17 @@ def _run_ingestion(request: IngestRequest, repo_name: str):
         name, path = clone_single_repo(request.repo_url, request.github_token)
         current_commit = sync_and_get_commit(path)
 
-        if current_commit == read_last_ingested_commit(name):
+        last_commit = read_last_ingested_commit(name)
+        if current_commit == last_commit and _repo_has_data(name):
             set_status(repo_name, "ready")
-            log.info("Skipping ingest for %s — no new commits", name)
+            log.info("Skipping ingest for %s — no new commits and data present", name)
+            return
+
+        # Sidecar file gone (Render restart) but Qdrant may still have data
+        if last_commit is None and _repo_has_data(name):
+            write_last_ingested_commit(name, current_commit)
+            set_status(repo_name, "ready")
+            log.info("Skipping ingest for %s — Qdrant has data, sidecar was lost", name)
             return
 
         total = ingest_repo(name, path, dry_run=request.dry_run)
@@ -269,7 +287,22 @@ def _run_ingestion_url(repo_url: str, github_token: str | None, repo_name: str):
     """Shared helper: clone + ingest from URL (used by webhook and /ingest)."""
     try:
         name, path = clone_single_repo(repo_url, github_token)
+        current_commit = sync_and_get_commit(path)
+
+        last_commit = read_last_ingested_commit(name)
+        if current_commit == last_commit and _repo_has_data(name):
+            set_status(repo_name, "ready")
+            log.info("Skipping webhook ingest for %s — no new commits and data present", name)
+            return
+
+        if last_commit is None and _repo_has_data(name):
+            write_last_ingested_commit(name, current_commit)
+            set_status(repo_name, "ready")
+            log.info("Skipping webhook ingest for %s — Qdrant has data, sidecar was lost", name)
+            return
+
         total = ingest_repo(name, path)
+        write_last_ingested_commit(name, current_commit)
         set_status(repo_name, "ready")
         log.info("Webhook ingestion complete for %s — %d chunks indexed", repo_name, total)
     except Exception as e:
