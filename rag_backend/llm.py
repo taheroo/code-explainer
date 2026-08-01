@@ -78,8 +78,8 @@ def _count_tokens(text: str) -> int:
 TOKEN_BUDGET_FULL = 4700
 TOKEN_BUDGET_RETRY = 2200
 
-# Questions shorter than this are narrow/specific — skip expansion.
-# Longer questions are broad and benefit from multi-variant search.
+# Questions longer than this are already specific — skip expansion.
+# Shorter questions are broad/ambiguous and benefit from multi-variant search.
 EXPANSION_SKIP_THRESHOLD = 20  # tokens
 
 
