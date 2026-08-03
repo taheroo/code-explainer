@@ -135,25 +135,7 @@ The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local 
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    User["👤 User"] -->|"POST /query"| API["FastAPI<br/>(Railway)"]
-    API -->|"embed query"| Embedder["BGE-small<br/>Embedder"]
-    API -->|"sparse embed"| Sparse["Token<br/>Sparse Embedder"]
-Embedder -->|"dense vector"| Qdrant["Qdrant Cloud<br/>Hybrid Search"]
-Sparse -->|"sparse vector"| Qdrant
-Qdrant -->|"top chunks"| LLM["Groq<br/>LLM"]
-    LLM -->|"answer"| API
-    API -->|"answer"| User
-
-    subgraph Ingest["Ingest Pipeline"]
-        Repo["GitHub Repo"] -->|"clone"| Chunker["AST/Regex<br/>Chunker"]
-        Chunker -->|"chunks"| Embedder
-        Chunker -->|"chunks"| Sparse
-        Embedder -->|"vectors"| Qdrant
-        Sparse -->|"vectors"| Qdrant
-    end
-```
+<img src="docs/architecture.svg" alt="Code Explorer Architecture" width="100%"/>
 
 ## Pipeline
 
