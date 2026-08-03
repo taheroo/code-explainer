@@ -135,7 +135,56 @@ The `Dockerfile` builds the backend, the `docker-compose.yml` is used for local 
 
 ## Architecture
 
-<img src="docs/architecture.svg" alt="Code Explorer Architecture" width="100%"/>
+```mermaid
+flowchart TB
+    subgraph ingest["Ingest Pipeline"]
+        direction LR
+        GH["GitHub Repo<br/>(auto-cloned)"]
+        CH["AST / Regex<br/>Chunker"]
+        GH -->|clone| CH
+    end
+
+    subgraph embed["Embedding Layer"]
+        direction TB
+        DE["BGE-small<br/>Dense Embedder"]
+        SE["Token<br/>Sparse Embedder"]
+    end
+
+    QD[("Qdrant Cloud<br/>Hybrid Search<br/>+ RRF merge")]
+
+    U["User<br/>(plain English question)"]
+    API["FastAPI Backend<br/>(Render)"]
+    LLM["Groq LLM<br/>Llama 3.1"]
+
+    CH -->|chunks| DE
+    CH -->|chunks| SE
+    DE -->|dense vectors| QD
+    SE -->|sparse vectors| QD
+
+    U -->|"POST /query"| API
+    API -->|embed question| DE
+    API -->|embed question| SE
+    DE -->|query vector| QD
+    SE -->|query tokens| QD
+    QD -->|"top 5 chunks"| API
+    API -->|"context + question"| LLM
+    LLM -->|grounded answer| API
+    API -->|answer| U
+
+    classDef user fill:#cde8fb,stroke:#4a90c2,color:#1a1a1a
+    classDef backend fill:#d6d0f5,stroke:#6a5acd,color:#1a1a1a
+    classDef embedder fill:#e8d6f5,stroke:#9b59b6,color:#1a1a1a
+    classDef store fill:#d0f0d8,stroke:#3d9970,color:#1a1a1a
+    classDef llm fill:#fde3c0,stroke:#e08a2e,color:#1a1a1a
+    classDef ingest fill:#f5f0d0,stroke:#b8a838,color:#1a1a1a
+
+    class U user
+    class API backend
+    class DE,SE embedder
+    class QD store
+    class LLM llm
+    class GH,CH ingest
+```
 
 ## Pipeline
 
