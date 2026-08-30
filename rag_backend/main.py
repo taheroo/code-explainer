@@ -28,6 +28,10 @@ from repo_manager import clone_single_repo, resolve_repos, sync_and_get_commit, 
 cache: dict[str, dict] = {}
 CACHE_TTL = 3600
 
+# Answers shorter than this are almost certainly degenerate (a truncated
+# stream, a lone markdown token) and are not worth caching or remembering.
+MIN_CACHEABLE_ANSWER_CHARS = 12
+
 STATUS_FILE = Path(__file__).resolve().parent.parent / "cloned_repos" / "ingestion_status.json"
 
 
@@ -125,8 +129,9 @@ def root() -> str:
 
     .msg.bot.error { background: #fff4f4; border: 1px solid #f0c9c9; color: #8a1f1f; }
     .msg.bot.error .answer { white-space: normal; }
-    .msg.bot.error .retry-btn { margin-top: 10px; display: inline-block; padding: 6px 14px; background: #8a1f1f; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
-    .msg.bot.error .retry-btn:hover { background: #6f1717; }
+    .msg.bot .retry-btn { margin-top: 10px; display: inline-block; padding: 6px 14px; background: #8a1f1f; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+    .msg.bot .retry-btn:hover { background: #6f1717; }
+    .msg.bot .err-note { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0c0c0; font-size: 0.82rem; color: #8a1f1f; white-space: normal; }
   </style>
 </head>
 <body>
@@ -261,10 +266,27 @@ def root() -> str:
               }
               continue;
             }
-            if (!received && data.startsWith(ERROR_PREFIX)) {
+            if (data.startsWith(ERROR_PREFIX)) {
               handled = true;
-              botMsg.remove();
-              showError(data.slice(ERROR_PREFIX.length), q);
+              const errMsg = data.slice(ERROR_PREFIX.length);
+              if (!received.trim()) {
+                // Failed before any answer text — replace the empty bubble.
+                botMsg.remove();
+                showError(errMsg, q);
+              } else {
+                // Failed mid-stream — keep the partial answer, append a note.
+                flush();
+                const note = document.createElement('div');
+                note.className = 'err-note';
+                note.textContent = errMsg;
+                botMsg.appendChild(note);
+                const btn = document.createElement('button');
+                btn.className = 'retry-btn';
+                btn.textContent = 'Retry';
+                btn.onclick = () => { botMsg.remove(); ask(q); };
+                botMsg.appendChild(btn);
+                chat.scrollTop = chat.scrollHeight;
+              }
               continue;
             }
             received += data;
@@ -453,17 +475,18 @@ def query(request: QueryRequest):
                         else:
                             full_answer += content
                     yield token
-            except Exception as exc:
+            except Exception:
                 # stream_answer() raised after the response headers were already
                 # sent (provider socket reset, tokenizer failure, ...). Without
                 # this the stream would just die and the client would hang on a
-                # partial answer with no terminator.
+                # partial answer with no terminator. The exception detail is
+                # logged server-side only — never echoed to the client, since it
+                # can carry internal context (e.g. a provider URL with an API key).
                 log.exception("query stream aborted mid-flight")
                 failed = True
-                detail = " ".join(str(exc).split()) or "an unexpected error"
                 yield (
-                    f"data: [[LLM_ERROR]] The code assistant hit {detail} while "
-                    "answering. Please try again in a moment.\n\n"
+                    "data: [[LLM_ERROR]] The code assistant hit an unexpected error "
+                    "while answering. Please try again in a moment.\n\n"
                 )
 
             # Guarantee the client always sees a terminator.
@@ -471,9 +494,11 @@ def query(request: QueryRequest):
                 yield "data: [DONE]\n\n"
 
             # Do not persist transient failures (rate limit / provider error) —
-            # they must not poison the cache or the conversation history.
+            # they must not poison the cache or the conversation history. The
+            # length floor also drops degenerate answers (a lone "**", a single
+            # stray token) that would otherwise be replayed from cache for an hour.
             answer = full_answer.strip()
-            if answer and not failed:
+            if len(answer) >= MIN_CACHEABLE_ANSWER_CHARS and not failed:
                 history.append({"role": "user", "content": request.question})
                 history.append({"role": "assistant", "content": answer})
                 cache[cache_key] = {"answer": answer, "ts": time.time(), "source": source}
