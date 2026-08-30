@@ -435,22 +435,45 @@ def query(request: QueryRequest):
         def generate():
             full_answer = ""
             source = None
-            for token in stream_answer(request.question, chunks, history=history):
-                if token.startswith("data: "):
-                    content = token[6:]
-                    if content.startswith("[[META]] "):
-                        try:
-                            source = json.loads(content[9:].strip()).get("source")
-                        except (json.JSONDecodeError, AttributeError):
-                            pass
-                    elif content != "[DONE]\n\n":
-                        full_answer += content
-                yield token
+            failed = False
+            done_sent = False
+            try:
+                for token in stream_answer(request.question, chunks, history=history):
+                    if token.startswith("data: "):
+                        content = token[6:]
+                        if content.startswith("[[META]] "):
+                            try:
+                                source = json.loads(content[9:].strip()).get("source")
+                            except (json.JSONDecodeError, AttributeError):
+                                pass
+                        elif content.strip() == "[DONE]":
+                            done_sent = True
+                        elif content.startswith("[[LLM_ERROR]]"):
+                            failed = True
+                        else:
+                            full_answer += content
+                    yield token
+            except Exception as exc:
+                # stream_answer() raised after the response headers were already
+                # sent (provider socket reset, tokenizer failure, ...). Without
+                # this the stream would just die and the client would hang on a
+                # partial answer with no terminator.
+                log.exception("query stream aborted mid-flight")
+                failed = True
+                detail = " ".join(str(exc).split()) or "an unexpected error"
+                yield (
+                    f"data: [[LLM_ERROR]] The code assistant hit {detail} while "
+                    "answering. Please try again in a moment.\n\n"
+                )
 
-            answer = full_answer.strip()
+            # Guarantee the client always sees a terminator.
+            if not done_sent:
+                yield "data: [DONE]\n\n"
+
             # Do not persist transient failures (rate limit / provider error) —
             # they must not poison the cache or the conversation history.
-            if answer and not answer.startswith("[[LLM_ERROR]]"):
+            answer = full_answer.strip()
+            if answer and not failed:
                 history.append({"role": "user", "content": request.question})
                 history.append({"role": "assistant", "content": answer})
                 cache[cache_key] = {"answer": answer, "ts": time.time(), "source": source}

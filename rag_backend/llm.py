@@ -67,8 +67,17 @@ def _get_encoder():
 
 
 def _count_tokens(text: str) -> int:
-    """Return the token count for a string."""
-    return len(_get_encoder().encode(text))
+    """Return the token count for a string.
+
+    tiktoken downloads its vocab on first use; if that fails (offline cold
+    start) fall back to a rough chars/4 estimate rather than letting the
+    exception escape into the middle of a streaming response.
+    """
+    try:
+        return len(_get_encoder().encode(text))
+    except Exception:
+        log.warning("tiktoken unavailable — using chars/4 token estimate", exc_info=True)
+        return max(1, len(text) // 4)
 
 
 # Budget: Groq free-tier has ~6 KB payload limit.
