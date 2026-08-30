@@ -232,7 +232,7 @@ def expand_query(question: str) -> list[str]:
         groq_key = os.getenv("GROQ_API_KEY")
         result = None
         if groq_key:
-            model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+            model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
             result = _call_groq(groq_key, model, prompt, system_prompt=system_prompt)
         if not result:
             gemini_key = os.getenv("GEMINI_API_KEY")
@@ -282,7 +282,7 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
     groq_key = os.getenv("GROQ_API_KEY")
     result = None
     if groq_key:
-        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
         result = _call_groq(groq_key, model, prompt, system_prompt=system_prompt)
     if not result:
         gemini_key = os.getenv("GEMINI_API_KEY")
@@ -329,7 +329,7 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
         yield "data: [DONE]\n\n"
         return
 
-    model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
     question_tokens = _count_tokens(question)
 
     # Budgets to try: full token budget first, then a single hard retry.
@@ -381,6 +381,9 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
             yield f"data: Error: {e}\n\n"
             break
 
+        # Streamed successfully (status wasn't 413) — do not fall through to the retry budget.
+        break
+
     yield "data: [DONE]\n\n"
 
 
@@ -399,7 +402,7 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
 
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_call_groq, groq_key, model, prompt)
             try:
