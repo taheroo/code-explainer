@@ -118,7 +118,14 @@ def root() -> str:
     .input-row input:focus { border-color: #007aff; }
     .input-row button { padding: 10px 20px; background: #007aff; color: #fff; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; }
     .input-row button:hover { background: #005bbf; }
+    .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .input-row input:disabled { background: #f7f7f7; }
     .typing { color: #999; font-style: italic; font-size: 0.85rem; padding: 4px 14px; }
+
+    .msg.bot.error { background: #fff4f4; border: 1px solid #f0c9c9; color: #8a1f1f; }
+    .msg.bot.error .answer { white-space: normal; }
+    .msg.bot.error .retry-btn { margin-top: 10px; display: inline-block; padding: 6px 14px; background: #8a1f1f; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+    .msg.bot.error .retry-btn:hover { background: #6f1717; }
   </style>
 </head>
 <body>
@@ -130,13 +137,16 @@ def root() -> str:
     <div id="typing" class="typing" style="display:none; padding: 0 20px 4px;">Thinking...</div>
     <div class="input-row">
       <input id="q" type="text" placeholder="Type your question..." autofocus />
-      <button onclick="ask()">Send</button>
+      <button id="send" onclick="ask()">Send</button>
     </div>
   </div>
   <script>
     const chat = document.getElementById('chat');
     const typing = document.getElementById('typing');
     const input = document.getElementById('q');
+    const sendBtn = document.getElementById('send');
+    const ERROR_PREFIX = '[[LLM_ERROR]] ';
+    let inFlight = false;
 
     function escapeHTML(str) {
       return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -158,20 +168,49 @@ def root() -> str:
       chat.scrollTop = chat.scrollHeight;
     }
 
-    async function ask() {
-      const q = input.value.trim();
+    function setBusy(b) {
+      inFlight = b;
+      sendBtn.disabled = b;
+      input.disabled = b;
+      typing.style.display = b ? 'block' : 'none';
+      if (!b) input.focus();
+    }
+
+    function showError(message, question) {
+      const d = document.createElement('div');
+      d.className = 'msg bot error';
+      const ans = document.createElement('div');
+      ans.className = 'answer';
+      ans.textContent = message;
+      d.appendChild(ans);
+      const btn = document.createElement('button');
+      btn.className = 'retry-btn';
+      btn.textContent = 'Retry';
+      btn.onclick = () => { d.remove(); ask(question); };
+      d.appendChild(btn);
+      chat.appendChild(d);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function ask(retryQuestion) {
+      if (inFlight) return;
+      const isRetry = retryQuestion !== undefined;
+      const q = isRetry ? retryQuestion : input.value.trim();
       if (!q) return;
-      addMsg(q, true);
-      input.value = '';
-      typing.style.display = 'block';
+      if (!isRetry) { addMsg(q, true); input.value = ''; }
+      setBusy(true);
+
       const answerEl = document.createElement('div');
       answerEl.className = 'answer';
       const botMsg = document.createElement('div');
       botMsg.className = 'msg bot';
       botMsg.appendChild(answerEl);
       chat.appendChild(botMsg);
+
       let pending = '';
       let scheduled = false;
+      let received = '';
+      let handled = false;
       function flush() {
         if (pending) {
           answerEl.innerHTML += mdToHTML(escapeHTML(pending));
@@ -180,12 +219,15 @@ def root() -> str:
         }
         scheduled = false;
       }
+
       try {
         const r = await fetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: q })
         });
+        if (!r.ok) throw new Error('server responded ' + r.status);
+
         const reader = r.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
@@ -196,19 +238,31 @@ def root() -> str:
           const lines = buf.split('\n');
           buf = lines.pop() || '';
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              pending += data;
-              if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+            if (!received && data.startsWith(ERROR_PREFIX)) {
+              handled = true;
+              botMsg.remove();
+              showError(data.slice(ERROR_PREFIX.length), q);
+              continue;
             }
+            received += data;
+            pending += data;
+            if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
           }
         }
         flush();
-        typing.style.display = 'none';
-      } catch(e) {
-        typing.style.display = 'none';
-        addMsg('Error: ' + e.message, false);
+
+        if (!handled && !received.trim()) {
+          botMsg.remove();
+          showError("The assistant didn't return a response. It may be temporarily rate-limited — please try again in a moment.", q);
+        }
+      } catch (e) {
+        botMsg.remove();
+        showError('Could not reach the code assistant (' + e.message + '). Check your connection and retry.', q);
+      } finally {
+        setBusy(false);
       }
     }
 
@@ -366,9 +420,13 @@ def query(request: QueryRequest):
                         full_answer += content
                 yield token
 
-            history.append({"role": "user", "content": request.question})
-            history.append({"role": "assistant", "content": full_answer.strip()})
-            cache[cache_key] = {"answer": full_answer.strip(), "ts": time.time()}
+            answer = full_answer.strip()
+            # Do not persist transient failures (rate limit / provider error) —
+            # they must not poison the cache or the conversation history.
+            if answer and not answer.startswith("[[LLM_ERROR]]"):
+                history.append({"role": "user", "content": request.question})
+                history.append({"role": "assistant", "content": answer})
+                cache[cache_key] = {"answer": answer, "ts": time.time()}
 
         return StreamingResponse(generate(), media_type="text/event-stream")
     except Exception as exc:
