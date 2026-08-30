@@ -316,6 +316,68 @@ def parse_query(question: str) -> tuple[str, dict[str, str]]:
 
 MAX_HISTORY_TURNS = 5
 
+# Sentinel prefix the frontend recognises to render a chunk as an error banner
+# (with a Retry affordance) instead of appending it as answer text.
+ERROR_PREFIX = "[[LLM_ERROR]] "
+
+RATE_LIMIT_MSG = (
+    ERROR_PREFIX
+    + "The code assistant is temporarily rate-limited by the language model "
+    "provider. Please wait a minute and try again."
+)
+GENERIC_ERROR_MSG = (
+    ERROR_PREFIX
+    + "The language model provider returned an error and no backup provider was "
+    "available. Please try again in a few moments."
+)
+TOO_LARGE_MSG = (
+    ERROR_PREFIX
+    + "The retrieved context is too large for the language model to process. "
+    "Try a shorter, more specific question (e.g. ask about one file)."
+)
+
+
+def _nonstream_fallback(
+    question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None
+) -> str | None:
+    """Best-effort non-streaming answer from Gemini then OpenRouter.
+
+    Used when the primary (Groq) streaming call fails — rate limit, provider
+    error, or an empty response — so a single provider outage does not leave the
+    user staring at a blank bubble.
+    """
+    question_tokens = _count_tokens(question)
+    trimmed = _trim_chunks_by_tokens(chunks, TOKEN_BUDGET_RETRY, question_tokens)
+    context = format_context(trimmed)
+    prompt = f"Context:\n{context}\n\nQuestion: {question}"
+
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        result = _call_gemini(gemini_key, os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), prompt)
+        if result:
+            log.info("stream_answer: served by Gemini fallback")
+            return result
+
+    or_key = os.getenv("OPENROUTER_API_KEY")
+    if or_key:
+        result = _call_openrouter(or_key, os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free"), prompt)
+        if result:
+            log.info("stream_answer: served by OpenRouter fallback")
+            return result
+
+    return None
+
+
+def _sse_text(text: str) -> Generator[str, None, None]:
+    """Yield `text` as SSE `data:` frames, one per line.
+
+    Matches the fidelity of the token stream (consecutive frames are concatenated
+    by the client) while keeping every physical line prefixed so nothing is
+    silently dropped.
+    """
+    for line in text.split("\n"):
+        yield f"data: {line}\n\n"
+
 
 def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None) -> Generator[str, None, None]:
     if not chunks:
@@ -324,16 +386,23 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
         return
 
     groq_key = os.getenv("GROQ_API_KEY")
-    if not groq_key:
-        yield "data: LLM service not configured. Set GROQ_API_KEY.\n\n"
-        yield "data: [DONE]\n\n"
-        return
-
     model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
     question_tokens = _count_tokens(question)
 
+    emitted_any = False
+    # None -> Groq not attempted / still ok; otherwise one of:
+    # "rate_limit" | "too_large" | "error"
+    failure: str | None = None
+
+    if not groq_key:
+        log.error("stream_answer: GROQ_API_KEY not set")
+        failure = "error"
+
     # Budgets to try: full token budget first, then a single hard retry.
     for attempt, budget in enumerate([TOKEN_BUDGET_FULL, TOKEN_BUDGET_RETRY]):
+        if not groq_key:
+            break
+
         trimmed = _trim_chunks_by_tokens(chunks, budget, question_tokens)
         context = format_context(trimmed)
         prompt = f"Context:\n{context}\n\nQuestion: {question}"
@@ -358,13 +427,23 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
                 with client.stream("POST", GROQ_URL, json=payload, headers=headers) as resp:
                     if resp.status_code == 413:
                         if attempt == 0:
-                            log.warning("413 Payload Too Large (budget=%d tokens) — retrying with %d tokens", budget, TOKEN_BUDGET_RETRY)
+                            log.warning("Groq 413 Payload Too Large (budget=%d) — retrying with %d", budget, TOKEN_BUDGET_RETRY)
                             continue
-                        else:
-                            log.error("413 Payload Too Large on retry (budget=%d tokens) — giving up", budget)
-                            yield "data: The context is too large for the LLM to process. Try a shorter question or ask about a specific file.\n\n"
-                            yield "data: [DONE]\n\n"
-                            return
+                        resp.read()
+                        log.error("Groq 413 on retry (budget=%d) — giving up", budget)
+                        failure = "too_large"
+                        break
+                    if resp.status_code == 429:
+                        resp.read()
+                        log.warning("Groq 429 rate limit: %s", resp.text[:300])
+                        failure = "rate_limit"
+                        break
+                    if resp.status_code >= 400:
+                        resp.read()
+                        log.error("Groq HTTP %d: %s", resp.status_code, resp.text[:300])
+                        failure = "error"
+                        break
+
                     for line in resp.iter_lines():
                         if line.startswith("data: "):
                             data = line[6:].strip()
@@ -374,15 +453,34 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
                                 event = _json.loads(data)
                                 token = event["choices"][0]["delta"].get("content", "")
                                 if token:
+                                    emitted_any = True
                                     yield f"data: {token}\n\n"
                             except _json.JSONDecodeError:
                                 pass
         except Exception as e:
-            yield f"data: Error: {e}\n\n"
+            log.error("Groq stream exception: %s", e)
+            failure = "error"
             break
 
-        # Streamed successfully (status wasn't 413) — do not fall through to the retry budget.
+        # Reached here on a real 200 stream (or an empty one) — no more attempts.
         break
+
+    if not emitted_any:
+        # Groq gave us nothing usable. Try the other providers before surfacing
+        # an error to the user.
+        if failure != "too_large":
+            fallback = _nonstream_fallback(question, chunks, history)
+            if fallback:
+                yield from _sse_text(fallback)
+                yield "data: [DONE]\n\n"
+                return
+
+        if failure == "rate_limit":
+            yield f"data: {RATE_LIMIT_MSG}\n\n"
+        elif failure == "too_large":
+            yield f"data: {TOO_LARGE_MSG}\n\n"
+        else:
+            yield f"data: {GENERIC_ERROR_MSG}\n\n"
 
     yield "data: [DONE]\n\n"
 
