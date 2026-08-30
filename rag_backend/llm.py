@@ -390,20 +390,33 @@ def _meta_frame(source: str) -> str:
     return f"data: {META_PREFIX}{_json.dumps({'source': source})}\n\n"
 
 
-def _sse_text(text: str) -> Generator[str, None, None]:
-    """Yield `text` as SSE `data:` frames, one per line.
+def sse(text: str) -> str:
+    """Serialize `text` as ONE SSE event, one `data:` line per physical line.
 
-    Matches the fidelity of the token stream (consecutive frames are concatenated
-    by the client) while keeping every physical line prefixed so nothing is
-    silently dropped.
+    A raw newline after a single `data: ` prefix is not valid SSE: spec-
+    compliant clients (and the web app) treat the following blank line as an
+    event boundary and silently drop everything after it. Emitting a `data:`
+    prefix for every physical line keeps multi-line Markdown — tables, lists,
+    fenced code — intact end to end.
     """
-    for line in text.split("\n"):
-        yield f"data: {line}\n\n"
+    return "".join(f"data: {line}\n" for line in text.split("\n")) + "\n"
+
+
+def sse_payload(frame: str) -> str:
+    """Inverse of `sse()` — the text carried by one SSE event's `data:` lines."""
+    return "\n".join(
+        line[6:] if line.startswith("data: ") else line[5:]
+        for line in frame.split("\n")
+        if line.startswith("data:")
+    )
 
 
 def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None) -> Generator[str, None, None]:
     if not chunks:
-        yield "data: I could not find any relevant information in the codebase to answer your question. Please try rephrasing it or ask about a different topic.\n\n"
+        yield sse(
+            "I could not find any relevant information in the codebase to answer "
+            "your question. Please try rephrasing it or ask about a different topic."
+        )
         yield "data: [DONE]\n\n"
         return
 
@@ -476,7 +489,7 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
                                 token = event["choices"][0]["delta"].get("content", "")
                                 if token:
                                     emitted_any = True
-                                    yield f"data: {token}\n\n"
+                                    yield sse(token)
                             except _json.JSONDecodeError:
                                 pass
         except Exception as e:
@@ -498,17 +511,17 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
         fallback = _nonstream_fallback(question, chunks, history)
         if fallback:
             text, source = fallback
-            yield from _sse_text(text)
+            yield sse(text)
             yield _meta_frame(source)
             yield "data: [DONE]\n\n"
             return
 
     if failure == "rate_limit":
-        yield f"data: {RATE_LIMIT_MSG}\n\n"
+        yield sse(RATE_LIMIT_MSG)
     elif failure == "too_large":
-        yield f"data: {TOO_LARGE_MSG}\n\n"
+        yield sse(TOO_LARGE_MSG)
     else:
-        yield f"data: {GENERIC_ERROR_MSG}\n\n"
+        yield sse(GENERIC_ERROR_MSG)
 
     yield "data: [DONE]\n\n"
 

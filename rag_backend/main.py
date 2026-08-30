@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 from embedder import get_embedder
 from qdrant_wrapper import get_qdrant_client
 from ingest import ingest_all, ingest_repo
-from llm import stream_answer
+from llm import stream_answer, sse, sse_payload
 from retriever import QueryRequest, retrieve
 from repo_manager import clone_single_repo, resolve_repos, sync_and_get_commit, read_last_ingested_commit, write_last_ingested_commit
 
@@ -242,11 +242,16 @@ def root() -> str:
           const { done, value } = await reader.read();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() || '';
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const data = line.slice(6);
+          // SSE events are blank-line separated; an event may carry several
+          // data: lines that together form one multi-line payload.
+          const events = buf.split('\n\n');
+          buf = events.pop() || '';
+          for (const evt of events) {
+            const data = evt.split('\n')
+              .filter(l => l.startsWith('data:'))
+              .map(l => l.replace(/^data: ?/, ''))
+              .join('\n');
+            if (!data) continue;
             if (data === '[DONE]') continue;
             if (data.startsWith(META_PREFIX)) {
               if (!handled) {
@@ -432,8 +437,12 @@ GREETINGS = {"hello", "hi", "hey", "good morning", "good afternoon", "good eveni
 def query(request: QueryRequest):
     q = request.question.lower().strip()
     if q in GREETINGS or len(q) < 3:
+        greeting = (
+            "Hello! I'm your code assistant. Ask me anything about the codebase "
+            "— what a component does, how a feature works, or where something is defined."
+        )
         return StreamingResponse(
-            iter([f"data: Hello! I'm your code assistant. Ask me anything about the codebase — what a component does, how a feature works, or where something is defined.\n\ndata: [DONE]\n\n"]),
+            iter([sse(greeting) + "data: [DONE]\n\n"]),
             media_type="text/event-stream",
         )
 
@@ -441,7 +450,7 @@ def query(request: QueryRequest):
     cache_key = f"{session_id}::{hashlib.md5(q.encode()).hexdigest()}"
     if cache_key in cache and time.time() - cache[cache_key]["ts"] < CACHE_TTL:
         entry = cache[cache_key]
-        frames = [f"data: {entry['answer']}\n\n"]
+        frames = [sse(entry["answer"])]
         if entry.get("source"):
             frames.append(f"data: [[META]] {json.dumps({'source': entry['source'] + ' · cached'})}\n\n")
         frames.append("data: [DONE]\n\n")
@@ -460,21 +469,20 @@ def query(request: QueryRequest):
             failed = False
             done_sent = False
             try:
-                for token in stream_answer(request.question, chunks, history=history):
-                    if token.startswith("data: "):
-                        content = token[6:]
-                        if content.startswith("[[META]] "):
-                            try:
-                                source = json.loads(content[9:].strip()).get("source")
-                            except (json.JSONDecodeError, AttributeError):
-                                pass
-                        elif content.strip() == "[DONE]":
-                            done_sent = True
-                        elif content.startswith("[[LLM_ERROR]]"):
-                            failed = True
-                        else:
-                            full_answer += content
-                    yield token
+                for frame in stream_answer(request.question, chunks, history=history):
+                    content = sse_payload(frame)
+                    if content.startswith("[[META]] "):
+                        try:
+                            source = json.loads(content[9:].strip()).get("source")
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+                    elif content.strip() == "[DONE]":
+                        done_sent = True
+                    elif content.startswith("[[LLM_ERROR]]"):
+                        failed = True
+                    elif content:
+                        full_answer += content
+                    yield frame
             except Exception:
                 # stream_answer() raised after the response headers were already
                 # sent (provider socket reset, tokenizer failure, ...). Without
