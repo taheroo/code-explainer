@@ -112,6 +112,7 @@ def root() -> str:
     .msg.bot .answer { white-space: pre-wrap; }
     .msg.bot .answer h2 { font-size: 1rem; margin: 8px 0 4px; }
     .msg.bot .answer hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
+    .msg.bot .meta { margin-top: 6px; font-size: 0.72rem; color: #999; letter-spacing: 0.02em; }
 
     .input-row { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #eee; }
     .input-row input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; outline: none; }
@@ -146,6 +147,7 @@ def root() -> str:
     const input = document.getElementById('q');
     const sendBtn = document.getElementById('send');
     const ERROR_PREFIX = '[[LLM_ERROR]] ';
+    const META_PREFIX = '[[META]] ';
     let inFlight = false;
 
     function escapeHTML(str) {
@@ -241,6 +243,24 @@ def root() -> str:
             if (!line.startsWith('data: ')) continue;
             const data = line.slice(6);
             if (data === '[DONE]') continue;
+            if (data.startsWith(META_PREFIX)) {
+              if (!handled) {
+                try {
+                  const info = JSON.parse(data.slice(META_PREFIX.length));
+                  if (info.source) {
+                    let metaEl = botMsg.querySelector('.meta');
+                    if (!metaEl) {
+                      metaEl = document.createElement('div');
+                      metaEl.className = 'meta';
+                      botMsg.appendChild(metaEl);
+                    }
+                    metaEl.textContent = info.source;
+                    chat.scrollTop = chat.scrollHeight;
+                  }
+                } catch (e) {}
+              }
+              continue;
+            }
             if (!received && data.startsWith(ERROR_PREFIX)) {
               handled = true;
               botMsg.remove();
@@ -398,11 +418,12 @@ def query(request: QueryRequest):
     session_id = request.session_id or "default"
     cache_key = f"{session_id}::{hashlib.md5(q.encode()).hexdigest()}"
     if cache_key in cache and time.time() - cache[cache_key]["ts"] < CACHE_TTL:
-        cached_answer = cache[cache_key]["answer"]
-        return StreamingResponse(
-            iter([f"data: {cached_answer}\n\ndata: [DONE]\n\n"]),
-            media_type="text/event-stream",
-        )
+        entry = cache[cache_key]
+        frames = [f"data: {entry['answer']}\n\n"]
+        if entry.get("source"):
+            frames.append(f"data: [[META]] {json.dumps({'source': entry['source'] + ' · cached'})}\n\n")
+        frames.append("data: [DONE]\n\n")
+        return StreamingResponse(iter(frames), media_type="text/event-stream")
 
     try:
         t0 = time.time()
@@ -413,10 +434,16 @@ def query(request: QueryRequest):
 
         def generate():
             full_answer = ""
+            source = None
             for token in stream_answer(request.question, chunks, history=history):
                 if token.startswith("data: "):
                     content = token[6:]
-                    if content != "[DONE]\n\n":
+                    if content.startswith("[[META]] "):
+                        try:
+                            source = json.loads(content[9:].strip()).get("source")
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+                    elif content != "[DONE]\n\n":
                         full_answer += content
                 yield token
 
@@ -426,7 +453,7 @@ def query(request: QueryRequest):
             if answer and not answer.startswith("[[LLM_ERROR]]"):
                 history.append({"role": "user", "content": request.question})
                 history.append({"role": "assistant", "content": answer})
-                cache[cache_key] = {"answer": answer, "ts": time.time()}
+                cache[cache_key] = {"answer": answer, "ts": time.time(), "source": source}
 
         return StreamingResponse(generate(), media_type="text/event-stream")
     except Exception as exc:
