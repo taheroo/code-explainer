@@ -320,6 +320,10 @@ MAX_HISTORY_TURNS = 5
 # (with a Retry affordance) instead of appending it as answer text.
 ERROR_PREFIX = "[[LLM_ERROR]] "
 
+# Sentinel prefix for a trailing metadata frame (JSON) describing which
+# provider/model actually produced the answer. Rendered as a caption, not text.
+META_PREFIX = "[[META]] "
+
 RATE_LIMIT_MSG = (
     ERROR_PREFIX
     + "The code assistant is temporarily rate-limited by the language model "
@@ -339,12 +343,14 @@ TOO_LARGE_MSG = (
 
 def _nonstream_fallback(
     question: str, chunks: list[RetrievedChunk], history: list[dict] | None = None
-) -> str | None:
+) -> tuple[str, str] | None:
     """Best-effort non-streaming answer from Gemini then OpenRouter.
 
     Used when the primary (Groq) streaming call fails — rate limit, provider
     error, or an empty response — so a single provider outage does not leave the
     user staring at a blank bubble.
+
+    Returns ``(answer_text, source_label)`` or ``None`` if no provider answered.
     """
     question_tokens = _count_tokens(question)
     trimmed = _trim_chunks_by_tokens(chunks, TOKEN_BUDGET_RETRY, question_tokens)
@@ -353,19 +359,26 @@ def _nonstream_fallback(
 
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
-        result = _call_gemini(gemini_key, os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), prompt)
+        gm = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        result = _call_gemini(gemini_key, gm, prompt)
         if result:
             log.info("stream_answer: served by Gemini fallback")
-            return result
+            return result, f"Gemini · {gm}"
 
     or_key = os.getenv("OPENROUTER_API_KEY")
     if or_key:
-        result = _call_openrouter(or_key, os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free"), prompt)
+        om = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
+        result = _call_openrouter(or_key, om, prompt)
         if result:
             log.info("stream_answer: served by OpenRouter fallback")
-            return result
+            return result, f"OpenRouter · {om}"
 
     return None
+
+
+def _meta_frame(source: str) -> str:
+    """An SSE frame carrying answer provenance for the frontend caption."""
+    return f"data: {META_PREFIX}{_json.dumps({'source': source})}\n\n"
 
 
 def _sse_text(text: str) -> Generator[str, None, None]:
@@ -465,22 +478,28 @@ def stream_answer(question: str, chunks: list[RetrievedChunk], history: list[dic
         # Reached here on a real 200 stream (or an empty one) — no more attempts.
         break
 
-    if not emitted_any:
-        # Groq gave us nothing usable. Try the other providers before surfacing
-        # an error to the user.
-        if failure != "too_large":
-            fallback = _nonstream_fallback(question, chunks, history)
-            if fallback:
-                yield from _sse_text(fallback)
-                yield "data: [DONE]\n\n"
-                return
+    if emitted_any:
+        yield _meta_frame(f"Groq · {model}")
+        yield "data: [DONE]\n\n"
+        return
 
-        if failure == "rate_limit":
-            yield f"data: {RATE_LIMIT_MSG}\n\n"
-        elif failure == "too_large":
-            yield f"data: {TOO_LARGE_MSG}\n\n"
-        else:
-            yield f"data: {GENERIC_ERROR_MSG}\n\n"
+    # Groq gave us nothing usable. Try the other providers before surfacing
+    # an error to the user.
+    if failure != "too_large":
+        fallback = _nonstream_fallback(question, chunks, history)
+        if fallback:
+            text, source = fallback
+            yield from _sse_text(text)
+            yield _meta_frame(source)
+            yield "data: [DONE]\n\n"
+            return
+
+    if failure == "rate_limit":
+        yield f"data: {RATE_LIMIT_MSG}\n\n"
+    elif failure == "too_large":
+        yield f"data: {TOO_LARGE_MSG}\n\n"
+    else:
+        yield f"data: {GENERIC_ERROR_MSG}\n\n"
 
     yield "data: [DONE]\n\n"
 
